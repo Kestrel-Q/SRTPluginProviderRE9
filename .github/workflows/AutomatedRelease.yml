@@ -95,9 +95,10 @@ jobs:
         run: |
           dotnet build ${{steps.generated-variables-1.outputs.solution}} -c "${{env.configuration}}" /p:Platform="${{env.platform}}"
 
-      - name: Upload C# artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
+          name: ArtifactsCsharp
           path: |
             ${{steps.generated-variables-1.outputs.build-directory}}*
 
@@ -137,9 +138,10 @@ jobs:
         working-directory: ${{ env.working-directory }}
         run: cmake --build --preset "${{ env.preset }}" --config ${{ env.configuration }}
 
-      - name: Upload C++ artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
+          name: ArtifactsCpp
           path: |
             ${{ env.working-directory }}/bin/${{ env.preset }}/${{ env.configuration }}/SRTPluginRE9.dll
             ${{ env.working-directory }}/bin/${{ env.preset }}/${{ env.configuration }}/SRTPluginRE9.pdb
