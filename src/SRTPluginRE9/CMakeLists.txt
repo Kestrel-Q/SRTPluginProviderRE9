@@ -23,8 +23,18 @@ set(CMAKE_EXECUTABLE_ENABLE_EXPORTS TRUE)
 set(VCPKG_CXX_FLAGS ${VCPKG_CXX_FLAGS} /DIM_ASSERT\(_EXPR\)=\(\(void\)\(_EXPR\)\))
 
 # Release optimizations
-add_compile_options("$<$<CONFIG:RELEASE>:/O2 /Ob2 /Oi /Ot /GL>")
-add_link_options("$<$<CONFIG:RELEASE>:/LTCG /OPT:REF /OPT:ICF>")
+add_compile_options(
+    "$<$<CONFIG:RELEASE>:/O2>"
+    "$<$<CONFIG:RELEASE>:/Ob2>"
+    "$<$<CONFIG:RELEASE>:/Oi>"
+    "$<$<CONFIG:RELEASE>:/Ot>"
+    "$<$<CONFIG:RELEASE>:/GL>"
+)
+add_link_options(
+    "$<$<CONFIG:RELEASE>:/LTCG>"
+    "$<$<CONFIG:RELEASE>:/OPT:REF>"
+    "$<$<CONFIG:RELEASE>:/OPT:ICF>"
+)
 add_compile_definitions(
     "$<$<OR:$<CONFIG:RELEASE>,$<CONFIG:MINSIZEREL>,$<CONFIG:RELWITHDEBINFO>>:RELEASE>"
     "$<$<CONFIG:DEBUG>:DEBUG>"
