@@ -10,6 +10,8 @@
 #include <cinttypes>
 #include <mutex>
 
+constinit uint32_t memoryReadIntervalInMS = 16U;
+
 std::optional<std::uintptr_t> g_BaseAddress;
 inline DX12HookState g_dx12HookState{};
 std::unique_ptr<SRTPluginRE9::Hook::UI> srtUI;
@@ -27,6 +29,8 @@ SRTPluginRE9::Hook::DescriptorHandle imguiFontHandle;
 inline std::atomic g_firstRunPresent = true;
 
 DeferredWndProc g_DeferredWndProc;
+
+SRTGameData g_SRTGameData;
 
 namespace SRTPluginRE9::Hook
 {
@@ -627,9 +631,19 @@ namespace SRTPluginRE9::Hook
 			return retVal;
 		}
 
-		// Block thread until shutdown requested.
+		// Read until shutdown requested.
+		SRTGameData localGameData{};
 		while (!g_shutdownRequested.load())
-			Sleep(100);
+		{
+			// Game memory read here.
+			//
+
+			// Replace global variable with our recently read data results.
+			g_SRTGameData = localGameData;
+
+			// Sleep until next read operation.
+			Sleep(memoryReadIntervalInMS);
+		}
 
 		logger->LogMessage("Hook::ThreadMain() Shutdown request received.\n");
 

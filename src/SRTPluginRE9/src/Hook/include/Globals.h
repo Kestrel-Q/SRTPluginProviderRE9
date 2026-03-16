@@ -38,6 +38,39 @@ struct DX12HookState
 	bool initialized = false;
 };
 
+struct PositionalData
+{
+	float_t X;
+	float_t Y;
+	float_t Z;
+	// Store quaternion data also?
+};
+
+struct HPData
+{
+	int32_t PlayerCurrentHP;
+	int32_t PlayerMaxHP;
+	bool IsSetup;
+};
+
+struct EnemyData
+{
+	int32_t KindID;
+	HPData HP;
+	PositionalData Position;
+};
+
+struct SRTGameData
+{
+	std::array<uint64_t, 13> InGameTimers;
+	uint32_t RunningTimers; // Enum
+	int32_t DARank;
+	int32_t DAScore;
+	HPData PlayerHP;
+	std::vector<EnemyData> Enemies; // Pre-filtered enemies.
+	uint32_t TotalEnemyCount;       // Total amount of enemies.
+};
+
 extern HMODULE g_dllModule;
 extern HANDLE g_mainThread;
 extern FILE *g_logFile;
@@ -48,5 +81,7 @@ extern DX12HookState g_dx12HookState;
 extern std::atomic<bool> g_shutdownRequested;
 extern std::mutex g_LogMutex;
 extern DeferredWndProc g_DeferredWndProc;
+
+extern SRTGameData g_SRTGameData;
 
 #endif
