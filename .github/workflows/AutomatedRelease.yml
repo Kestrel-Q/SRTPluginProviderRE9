@@ -54,22 +54,22 @@ jobs:
         id: version-parts
         run: |
           [string[]]$versionParts = (Get-Content -Path "version.txt" -Raw).Split('.');
-          echo "version_major=$($versionParts[0])" | Set-Content $env:GITHUB_OUTPUT
-          echo "version_minor=$($versionParts[1])" | Set-Content $env:GITHUB_OUTPUT
-          echo "version_patch=$($versionParts[2])" | Set-Content $env:GITHUB_OUTPUT
-          echo "version_prereltag=${{ github.event.inputs.versionPreReleaseTag || '' }}" | Set-Content $env:GITHUB_OUTPUT
+          echo "version_major=$($versionParts[0])" >> $env:GITHUB_OUTPUT
+          echo "version_minor=$($versionParts[1])" >> $env:GITHUB_OUTPUT
+          echo "version_patch=$($versionParts[2])" >> $env:GITHUB_OUTPUT
+          echo "version_prereltag=${{ github.event.inputs.versionPreReleaseTag || '' }}" >> $env:GITHUB_OUTPUT
 
       - name: Get new build number
         id: build-number
         run: |
           $build_number = $((${{ vars.BUILD_NUMBER }} + 1))
-          echo "current_build_number=$build_number" | Set-Content $env:GITHUB_OUTPUT
+          echo "current_build_number=$build_number" >> $env:GITHUB_OUTPUT
 
       - name: Get short SHA hash
         id: short-sha-hash
         run: |
           $short_sha_hash = $(("${{ github.sha }}".substring(0, 7)))
-          echo "short_sha_hash=$short_sha_hash" | Set-Content $env:GITHUB_OUTPUT
+          echo "short_sha_hash=$short_sha_hash" >> $env:GITHUB_OUTPUT
 
       - name: Get SemVer string
         id: semver-string
@@ -80,7 +80,7 @@ jobs:
           }
           $semver_string += "+${{steps.build-number.outputs.current_build_number}}";
           $semver_string += ".${{steps.short-sha-hash.outputs.short_sha_hash}}";
-          echo "semver_string=$semver_string" | Set-Content $env:GITHUB_OUTPUT;
+          echo "semver_string=$semver_string" >> $env:GITHUB_OUTPUT;
 
   build-csharp:
     name: "Build (C#)"
@@ -249,6 +249,6 @@ jobs:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: "latest"
           prerelease: ${{env.is-prerelease}}
-          title: "Automated Build - ${{needs.build-csharp.outputs.version}} Release"
+          title: "Automated Build - $${{needs.Setup.outputs.verSemVerString}} Release"
           files: |
-            ${{needs.build-csharp.outputs.zip-filename}}
+            ${{env.projectName}}_${{needs.Setup.outputs.verSemVerString}}.zip
