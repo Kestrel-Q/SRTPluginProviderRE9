@@ -54,9 +54,9 @@ jobs:
         id: version-parts
         run: |
           [string[]]$versionParts = (Get-Content -Path "version.txt" -Raw).Split('.');
-          echo "version_major=$versionParts[0]" | Set-Content $env:GITHUB_OUTPUT
-          echo "version_minor=$versionParts[1]" | Set-Content $env:GITHUB_OUTPUT
-          echo "version_patch=$versionParts[2]" | Set-Content $env:GITHUB_OUTPUT
+          echo "version_major=$($versionParts[0])" | Set-Content $env:GITHUB_OUTPUT
+          echo "version_minor=$($versionParts[1])" | Set-Content $env:GITHUB_OUTPUT
+          echo "version_patch=$($versionParts[2])" | Set-Content $env:GITHUB_OUTPUT
           echo "version_prereltag=${{ github.event.inputs.versionPreReleaseTag || '' }}" | Set-Content $env:GITHUB_OUTPUT
 
       - name: Get new build number
