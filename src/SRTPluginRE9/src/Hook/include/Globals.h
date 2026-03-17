@@ -38,6 +38,62 @@ struct DX12HookState
 	bool initialized = false;
 };
 
+extern "C"
+{
+	struct InteropArray
+	{
+		size_t Size;
+		void *Values;
+	};
+
+	struct PositionalData
+	{
+		float_t X;
+		float_t Y;
+		float_t Z;
+		// Store quaternion data also?
+	};
+
+	struct HPData
+	{
+		int32_t CurrentHP;
+		int32_t MaximumHP;
+		bool IsSetup;
+	};
+
+	struct EnemyData
+	{
+		int32_t KindID;
+		HPData HP;
+		PositionalData Position;
+	};
+
+	struct SRTGameData
+	{
+		InteropArray InGameTimers; // [13]
+		uint32_t RunningTimers;    // Enum
+		int32_t DARank;
+		int32_t DAScore;
+		HPData PlayerHP;
+		InteropArray AllEnemies;
+		InteropArray FilteredEnemies;
+	};
+}
+
+// Double-buffered to allow the main thread and UI thread to operate on data independently.
+struct GameDataBuffer
+{
+	SRTGameData Data{};
+
+	// Backing storage - InteropArray::Values will point into these.
+	std::vector<EnemyData> AllEnemiesBacking{};
+	std::vector<EnemyData> FilteredEnemiesBacking{};
+	std::vector<uint64_t> TimersBacking{};
+};
+
+inline GameDataBuffer g_GameDataBuffers[2]{};
+inline std::atomic<uint32_t> g_GameDataBufferReadIndex{0};
+
 extern HMODULE g_dllModule;
 extern HANDLE g_mainThread;
 extern FILE *g_logFile;

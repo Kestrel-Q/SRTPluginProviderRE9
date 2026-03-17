@@ -1,14 +1,23 @@
-#pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 
 #include "Hook.h"
 #include "AOBScanner.h"
+#include "CompositeOrderer.h"
 #include "DeferredWndProc.h"
 #include "Globals.h"
 #include "Render.h"
 #include "UI.h"
 #include "imgui_impl_win32.h"
+#include <algorithm>
 #include <cinttypes>
+#include <functional>
 #include <mutex>
+#include <optional>
+#include <ranges>
+
+constinit uint32_t memoryReadIntervalInMS = 16U;
 
 std::optional<std::uintptr_t> g_BaseAddress;
 inline DX12HookState g_dx12HookState{};
@@ -627,9 +636,91 @@ namespace SRTPluginRE9::Hook
 			return retVal;
 		}
 
-		// Block thread until shutdown requested.
+		// Read until shutdown requested.
+		auto rankManager = protect(reinterpret_cast<RankManager **>(*g_BaseAddress + 0x0E815400ULL)).deref();
+		auto characterManager = protect(reinterpret_cast<CharacterManager **>(*g_BaseAddress + 0x0E843CF8ULL)).deref();
+		auto gameClock = protect(reinterpret_cast<GameClock **>(*g_BaseAddress + 0x0E834680ULL)).deref();
+		// auto cameraSystem = protect(reinterpret_cast<CameraSystem **>(*g_BaseAddress + 0x0E816138ULL)).deref();
 		while (!g_shutdownRequested.load())
-			Sleep(100);
+		{
+			// Acquire an index to buffer data write into and get a reference to that data buffer.
+			auto writeIndex = 1U - g_GameDataBufferReadIndex.load(std::memory_order_acquire);
+			auto &localGameData = g_GameDataBuffers[writeIndex];
+
+			// DA
+			auto activeRankProfile = rankManager.follow(&RankManager::_ActiveRankProfile);
+			localGameData.Data.DARank = activeRankProfile.read(&RankProfile::_CurrentRank);
+			localGameData.Data.DAScore = activeRankProfile.read(&RankProfile::_RankPoints);
+
+			// Player HP
+			auto activePlayerContext = characterManager.follow(&CharacterManager::PlayerContextFast);
+			auto playerHitPoint = activePlayerContext.follow(&PlayerContext::HitPoint);
+			auto playerHitPointData = playerHitPoint.follow(&HitPoint::HitPointData);
+			localGameData.Data.PlayerHP.CurrentHP = playerHitPointData.read(&CharacterHitPointData::_CurrentHP);
+			localGameData.Data.PlayerHP.MaximumHP = playerHitPointData.read(&CharacterHitPointData::_CurrentMaxHP);
+			localGameData.Data.PlayerHP.IsSetup = playerHitPointData.read(&CharacterHitPointData::_IsSetuped);
+
+			// Enemy HP
+			auto enemyContextManagedList = characterManager.follow(&CharacterManager::EnemyContextList);
+			localGameData.AllEnemiesBacking = std::span<EnemyContext *>(enemyContextManagedList->begin(), enemyContextManagedList->end()) |
+			                                  std::views::transform([](const EnemyContext *enemyContext)
+			                                                        {
+				                                              auto protectedEnemyContext = protect(enemyContext);
+				                                              auto hitPointData = protectedEnemyContext.follow(&EnemyContext::HitPoint).follow(&HitPoint::HitPointData);
+				                                              return EnemyData
+				                                              {
+				                                              	.KindID = protectedEnemyContext.read(&EnemyContext::KindID),
+				                                              	.HP = HPData
+				                                              	{
+				                                              		.CurrentHP = hitPointData.read(&CharacterHitPointData::_CurrentHP),
+				                                              		.MaximumHP = hitPointData.read(&CharacterHitPointData::_CurrentMaxHP),
+				                                              		.IsSetup = hitPointData.read(&CharacterHitPointData::_IsSetuped) != 0
+				                                              	},
+				                                              	.Position = PositionalData{}
+				                                              }; }) |
+			                                  std::ranges::to<std::vector>();
+
+			localGameData.Data.AllEnemies = InteropArray{
+			    .Size = localGameData.AllEnemiesBacking.size(),
+			    .Values = localGameData.AllEnemiesBacking.data()};
+
+			localGameData.FilteredEnemiesBacking = localGameData.AllEnemiesBacking |
+			                                       std::views::filter([](const EnemyData &enemyData)
+			                                                          { return enemyData.HP.MaximumHP >= 2 && enemyData.HP.CurrentHP != 0; }) |
+			                                       std::ranges::to<std::vector>();
+
+			auto compare = OrderByDescending([](const EnemyData &enemyData)
+			                                 { return enemyData.HP.CurrentHP < enemyData.HP.MaximumHP; })
+			                   .ThenByDescending([](const EnemyData &enemyData)
+			                                     { return enemyData.HP.MaximumHP; });
+			std::ranges::sort(localGameData.FilteredEnemiesBacking, compare);
+
+			localGameData.Data.FilteredEnemies = InteropArray{
+			    .Size = localGameData.FilteredEnemiesBacking.size(),
+			    .Values = localGameData.FilteredEnemiesBacking.data()};
+
+			//// IGT
+			// auto allTimersVector = std::span<Time *>(
+			//                            gameClock
+			//                                .follow(&GameClock::_Timers)
+			//                                .read(&ManagedArray<Time *>::_Values),
+			//                            gameClock
+			//                                .read(&ManagedArray<Time *>::_Count)) |
+			//                        std::views::transform([](Time *time)
+			//                                              { return (time) ? time->_ElapsedTime : 0ULL; }) |
+			//                        std::ranges::to<std::vector>();
+
+			// localGameData.RunningTimers = gameClock.read(&GameClock::_RunningTimers);
+			// localGameData.InGameTimers = InteropArray{
+			//     .Size = allTimersVector.size(),
+			//     .Values = allTimersVector.data()};
+
+			// Release this index back to the data buffer.
+			g_GameDataBufferReadIndex.store(writeIndex, std::memory_order_release);
+
+			// Sleep until next read operation.
+			Sleep(memoryReadIntervalInMS);
+		}
 
 		logger->LogMessage("Hook::ThreadMain() Shutdown request received.\n");
 
