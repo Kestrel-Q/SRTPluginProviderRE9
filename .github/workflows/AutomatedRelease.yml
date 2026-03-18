@@ -46,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -93,7 +93,7 @@ jobs:
     steps:
       # Checkout latest code
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -103,7 +103,7 @@ jobs:
 
       # Checkout latest dependencies code
       - name: Checkout SRTHost
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           path: SRTHost
@@ -119,7 +119,7 @@ jobs:
 
       # Checkout latest dependencies code
       - name: Checkout ProcessMemory
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           path: ProcessMemory
@@ -137,7 +137,7 @@ jobs:
 
       # Install .NET
       - name: Install .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
           dotnet-quality: "ga"
@@ -177,7 +177,7 @@ jobs:
           . "$($env:VCPKG_ROOT)\vcpkg.exe" version
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -216,7 +216,7 @@ jobs:
     steps:
       # Checkout latest code
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -253,7 +253,7 @@ jobs:
           files: |
             ${{env.projectName}}_${{needs.Setup.outputs.verSemVerString}}.zip
 
-  PostRun:
+  postrun:
     name: Post-Run
     runs-on: windows-2025-vs2026
     needs: [setup, package]
@@ -263,6 +263,12 @@ jobs:
         shell: pwsh
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
       - name: Update build number variable
         env:
           GH_TOKEN: ${{ secrets.GH_VARIABLE_RW_TOKEN }}
