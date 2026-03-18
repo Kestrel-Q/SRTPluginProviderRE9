@@ -29,7 +29,7 @@ env:
   baseFolderName: SRTPluginProviderRE9
   platform: x64
   configuration: ${{ github.event.inputs.buildConfiguration || 'Release' }}
-  cppConfiguration: ${{ github.event.inputs.buildConfiguration || 'RelWithDebugInfo' }}
+  cppConfiguration: ${{ github.event.inputs.buildConfiguration || 'RelWithDebInfo' }}
 
 jobs:
   setup:
