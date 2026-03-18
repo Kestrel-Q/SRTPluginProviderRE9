@@ -185,6 +185,8 @@ namespace SRTPluginRE9::Hook
 			}
 		}
 
+		ImGui::Checkbox("Hide full HP enemies", &hideFullHPEnemies);
+
 		ImGui::End();
 	}
 
@@ -396,7 +398,7 @@ namespace SRTPluginRE9::Hook
 
 			for (const auto &enemyData : std::span(static_cast<EnemyData *>(localGameData.FilteredEnemies.Values), localGameData.FilteredEnemies.Size) | std::views::take(g_SRTSettings.EnemiesShownLimit))
 			{
-				if (enemyData.HP.CurrentHP >= 1000000)
+				if (enemyData.HP.CurrentHP >= 1'000'000 || (hideFullHPEnemies && enemyData.HP.CurrentHP == enemyData.HP.MaximumHP))
 				{
 					continue;
 				}
