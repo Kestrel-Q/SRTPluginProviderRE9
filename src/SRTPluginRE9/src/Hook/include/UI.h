@@ -78,7 +78,9 @@ namespace SRTPluginRE9::Hook
 		std::atomic<uint32_t> reportedBadDA = 0;
 		std::atomic<uint32_t> reportedBadPlayerHP = 0;
 		static const uint32_t triggerInterval = 120U * 20U; // (120 * 20) = approximately how many frames we wait before we trigger a bad pointer report. Just in case we were loading a new zone.
-		static const size_t enemyCountLimit = 16;
+
+		int enemyCountLimit = 16;
+		float fontScaleFactor = 1.33f;
 	};
 }
 

@@ -46,7 +46,7 @@ namespace SRTPluginRE9::Hook
 	void STDMETHODCALLTYPE UI::DrawUI()
 	{
 		ImGuiIO &imguiIO = ImGui::GetIO();
-		imguiIO.FontGlobalScale = 1.33f;
+		imguiIO.FontGlobalScale = fontScaleFactor;
 
 		DrawLogoOverlay();
 		DrawMain();
@@ -141,13 +141,23 @@ namespace SRTPluginRE9::Hook
 		ImGui::Text("Press F8 or go to File -> Exit to shutdown the SRT.");
 		ImGui::Separator();
 
+		ImGui::Text("Resolution: %.0fx%.0f", horizontal, vertical);
+		ImGui::Combo("Logo Position", reinterpret_cast<int32_t *>(&logoOptions.Position), logoPositions, IM_ARRAYSIZE(logoPositions));
+		OpacitySlider("Logo Opacity", logoOptions.Opacity, 10.0f);
 		OpacitySlider("Main Opacity", mainUIOptions.Opacity);
 		OpacitySlider("About Opacity", aboutUIOptions.Opacity);
 		OpacitySlider("Logger Opacity", debugLoggerUIOptions.Opacity);
 		OpacitySlider("Overlay Opacity", debugOverlayUIOptions.Opacity);
-		OpacitySlider("Logo Opacity", logoOptions.Opacity, 10.0f);
-		ImGui::Combo("Logo Position", reinterpret_cast<int32_t *>(&logoOptions.Position), logoPositions, IM_ARRAYSIZE(logoPositions));
-		ImGui::Text("Resolution: %.0fx%.0f", horizontal, vertical);
+
+		// Enemy Count Slider
+		ImGui::SliderInt("Limit Enemies Shown", &enemyCountLimit, 1, 32, "%d");
+
+		// Font Scale Slider.
+		{
+			auto floatDisplay = fontScaleFactor * 100.0f;
+			if (ImGui::SliderFloat("Font Scaling Factor", &floatDisplay, 80.0f, 300.0f, "%.0f%%"))
+				fontScaleFactor = floatDisplay / 100.0f;
+		}
 
 		ImGui::End();
 	}
@@ -355,7 +365,7 @@ namespace SRTPluginRE9::Hook
 			ImGui::Separator();
 
 			// Enemies
-			auto enemiesToShow = std::min(enemyCountLimit, localGameData.FilteredEnemies.Size);
+			auto enemiesToShow = std::min(static_cast<size_t>(enemyCountLimit), localGameData.FilteredEnemies.Size);
 			ImGui::Text("Enemies (%zu of %zu):", enemiesToShow, localGameData.FilteredEnemies.Size);
 			for (const auto &enemyData : std::span<EnemyData>(reinterpret_cast<EnemyData *>(localGameData.FilteredEnemies.Values), localGameData.FilteredEnemies.Size) | std::views::take(enemyCountLimit))
 			{
