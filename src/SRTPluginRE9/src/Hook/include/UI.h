@@ -48,10 +48,10 @@ namespace SRTPluginRE9::Hook
 		float vertical;
 
 		ImGuiTextFilter debugLoggerFilter;
-		bool debugLoggerOpen; // g_SRTSettings
-		bool overlayOpen;
-		bool mainUIOpen;
-		bool aboutUIOpen;
+		bool debugLoggerOpen = false; // g_SRTSettings
+		bool overlayOpen = true;
+		bool mainUIOpen = true;
+		bool aboutUIOpen = false;
 
 		const char *logoPositions[4]{"Upper Left", "Upper Right", "Lower Left", "Lower Right"};
 		SRTPluginRE9::Hook::DescriptorHandle logoHandle;
