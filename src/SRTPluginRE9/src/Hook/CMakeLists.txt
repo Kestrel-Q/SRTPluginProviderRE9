@@ -55,6 +55,7 @@ target_sources(${PROJECT_NAME}
         DescriptorHeapAllocator.cpp
         DeferredWndProc.cpp
         UI.cpp
+        Settings.cpp
         Render.cpp
         Hook.cpp
         Logger.cpp

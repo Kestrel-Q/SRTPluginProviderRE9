@@ -8,6 +8,7 @@
 #include "DeferredWndProc.h"
 #include "Globals.h"
 #include "Render.h"
+#include "Settings.h"
 #include "UI.h"
 #include "imgui_impl_win32.h"
 #include <algorithm>
@@ -36,6 +37,7 @@ inline ID3D12CommandQueue *g_lastSeenDirectQueue = nullptr;
 inline std::atomic g_firstRunPresent = true;
 
 DeferredWndProc g_DeferredWndProc;
+SRTSettings g_SRTSettings;
 
 namespace SRTPluginRE9::Hook
 {
@@ -257,6 +259,7 @@ namespace SRTPluginRE9::Hook
 
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
+		RegisterSRTSettingsHandler();
 		ImGui::StyleColorsDark();
 
 		ImGuiIO &io = ImGui::GetIO();

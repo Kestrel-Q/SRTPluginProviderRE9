@@ -6,6 +6,7 @@
 #endif
 
 #include "DescriptorHeapAllocator.h"
+#include "Settings.h"
 #include "imgui.h"
 #include <atomic>
 #include <cstdint>
@@ -21,24 +22,6 @@ namespace SRTPluginRE9::Hook
 		UpperRight = 1,
 		LowerLeft = 2,
 		LowerRight = 3
-	};
-
-	struct UIOption
-	{
-		float Opacity;
-		bool Open;
-	};
-
-	struct LoggerUIOption : UIOption
-	{
-		ImGuiTextFilter Filter;
-		bool AutoScroll;
-	};
-
-	struct LogoOption
-	{
-		float Opacity;
-		LogoPosition Position;
 	};
 
 	class UI
@@ -61,14 +44,14 @@ namespace SRTPluginRE9::Hook
 		void STDMETHODCALLTYPE DrawDebugOverlay();
 		void STDMETHODCALLTYPE DrawLogoOverlay();
 
-		UIOption mainUIOptions{.Opacity = 1.f, .Open = true};
-		UIOption aboutUIOptions{.Opacity = 1.f, .Open = false};
-		LoggerUIOption debugLoggerUIOptions{.2f, false, {}, true};
-		UIOption debugOverlayUIOptions{.Opacity = .2f, .Open = true};
-		LogoOption logoOptions{.Opacity = .2f, .Position = LogoPosition::UpperLeft};
-
 		float horizontal;
 		float vertical;
+
+		ImGuiTextFilter debugLoggerFilter;
+		bool debugLoggerOpen; // g_SRTSettings
+		bool overlayOpen;
+		bool mainUIOpen;
+		bool aboutUIOpen;
 
 		const char *logoPositions[4]{"Upper Left", "Upper Right", "Lower Left", "Lower Right"};
 		SRTPluginRE9::Hook::DescriptorHandle logoHandle;
@@ -80,10 +63,6 @@ namespace SRTPluginRE9::Hook
 		std::atomic<uint32_t> reportedBadDA = 0;
 		std::atomic<uint32_t> reportedBadPlayerHP = 0;
 		static const uint32_t triggerInterval = 120U * 20U; // (120 * 20) = approximately how many frames we wait before we trigger a bad pointer report. Just in case we were loading a new zone.
-
-		int enemyCountLimit = 16;
-		float dpiScaleFactor = 1.25f;
-		float fontScaleFactor = 1.25f;
 	};
 }
 

@@ -48,14 +48,14 @@ namespace SRTPluginRE9::Hook
 	{
 		ImGuiStyle &style = ImGui::GetStyle() = ImGuiStyle(); // Reset style.
 		ImGui::StyleColorsDark();                             // Set color mode again.
-		style.ScaleAllSizes(dpiScaleFactor);                  // Set scaling.
-		style.FontScaleDpi = dpiScaleFactor;                  // Set font DPI which is not set by the prior method call.
+		style.ScaleAllSizes(g_SRTSettings.DPIScalingFactor);  // Set scaling.
+		style.FontScaleDpi = g_SRTSettings.FontScalingFactor; // Set font DPI which is not set by the prior method call.
 	}
 
 	void STDMETHODCALLTYPE UI::RescaleFont()
 	{
-		ImGuiStyle &style = ImGui::GetStyle(); // Reset style.
-		style.FontScaleDpi = fontScaleFactor;  // Set font DPI .
+		ImGuiStyle &style = ImGui::GetStyle();                // Reset style.
+		style.FontScaleDpi = g_SRTSettings.FontScalingFactor; // Set font DPI .
 	}
 
 	void STDMETHODCALLTYPE UI::DrawUI()
@@ -63,10 +63,10 @@ namespace SRTPluginRE9::Hook
 		DrawLogoOverlay();
 		DrawMain();
 
-		if (debugLoggerUIOptions.Open)
+		if (debugLoggerOpen)
 			DrawDebugLogger();
 
-		if (debugOverlayUIOptions.Open)
+		if (overlayOpen)
 			DrawDebugOverlay();
 	}
 
@@ -93,27 +93,27 @@ namespace SRTPluginRE9::Hook
 
 	void STDMETHODCALLTYPE UI::ToggleUI()
 	{
-		mainUIOptions.Open = !mainUIOptions.Open;
+		mainUIOpen = !mainUIOpen;
 	}
 
 	void STDMETHODCALLTYPE UI::DrawMain()
 	{
 		ImGuiIO &imguiIO = ImGui::GetIO();
-		imguiIO.MouseDrawCursor = mainUIOptions.Open;
+		imguiIO.MouseDrawCursor = mainUIOpen;
 
 		// If the Main UI is hidden, exit here.
-		if (!mainUIOptions.Open)
+		if (!mainUIOpen)
 			return;
 
 		// Conditionally shown items (shown only if the Main UI is showing)
-		if (aboutUIOptions.Open)
+		if (aboutUIOpen)
 			DrawAbout();
 
 		ImGui::SetNextWindowPos(ImVec2(imguiIO.DisplaySize.x / 4, imguiIO.DisplaySize.y / 4), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(400, 260), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowBgAlpha(mainUIOptions.Opacity);
+		ImGui::SetNextWindowBgAlpha(g_SRTSettings.MainOpacity);
 
-		if (!ImGui::Begin("SRT", (bool *)&mainUIOptions.Open, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoCollapse))
+		if (!ImGui::Begin("SRT", (bool *)&mainUIOpen, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoCollapse))
 		{
 			ImGui::End();
 			return;
@@ -134,14 +134,14 @@ namespace SRTPluginRE9::Hook
 
 			if (ImGui::BeginMenu("View"))
 			{
-				ImGui::MenuItem("Log", NULL, &debugLoggerUIOptions.Open);
-				ImGui::MenuItem("Debug Overlay", NULL, &debugOverlayUIOptions.Open);
+				ImGui::MenuItem("Log", NULL, &debugLoggerOpen);
+				ImGui::MenuItem("Debug Overlay", NULL, &overlayOpen);
 				ImGui::EndMenu();
 			}
 
 			if (ImGui::BeginMenu("Help"))
 			{
-				ImGui::MenuItem("About", NULL, &aboutUIOptions.Open);
+				ImGui::MenuItem("About", NULL, &aboutUIOpen);
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenuBar();
@@ -154,32 +154,32 @@ namespace SRTPluginRE9::Hook
 		ImGui::Separator();
 
 		ImGui::Text("Resolution: %.0fx%.0f", horizontal, vertical);
-		ImGui::Combo("Logo Position", reinterpret_cast<int32_t *>(&logoOptions.Position), logoPositions, IM_ARRAYSIZE(logoPositions));
-		OpacitySlider("Logo Opacity", logoOptions.Opacity, 10.0f);
-		OpacitySlider("Main Opacity", mainUIOptions.Opacity);
-		OpacitySlider("About Opacity", aboutUIOptions.Opacity);
-		OpacitySlider("Logger Opacity", debugLoggerUIOptions.Opacity);
-		OpacitySlider("Overlay Opacity", debugOverlayUIOptions.Opacity);
+		ImGui::Combo("Logo Position", &g_SRTSettings.LogoPosition, logoPositions, IM_ARRAYSIZE(logoPositions));
+		OpacitySlider("Logo Opacity", g_SRTSettings.LogoOpacity, 10.0f);
+		OpacitySlider("Main Opacity", g_SRTSettings.MainOpacity);
+		OpacitySlider("About Opacity", g_SRTSettings.AboutOpacity);
+		OpacitySlider("Logger Opacity", g_SRTSettings.LoggerOpacity);
+		OpacitySlider("Overlay Opacity", g_SRTSettings.OverlayOpacity);
 
 		// Enemy Count Slider
-		ImGui::SliderInt("Limit Enemies Shown", &enemyCountLimit, 1, 32, "%d");
+		ImGui::SliderInt("Limit Enemies Shown", &g_SRTSettings.EnemiesShownLimit, 1, 32, "%d");
 
 		// DPI Scale Slider.
 		{
-			auto floatDisplay = dpiScaleFactor * 100.0f;
+			auto floatDisplay = g_SRTSettings.DPIScalingFactor * 100.0f;
 			if (ImGui::SliderFloat("DPI Scaling Factor", &floatDisplay, 75.0f, 300.0f, "%.0f%%"))
 			{
-				dpiScaleFactor = floatDisplay / 100.0f;
+				g_SRTSettings.DPIScalingFactor = floatDisplay / 100.0f;
 				UI::RescaleDPI();
 			}
 		}
 
 		// Font Scale Slider.
 		{
-			auto floatDisplay = fontScaleFactor * 100.0f;
+			auto floatDisplay = g_SRTSettings.FontScalingFactor * 100.0f;
 			if (ImGui::SliderFloat("Font Scaling Factor", &floatDisplay, 75.0f, 300.0f, "%.0f%%"))
 			{
-				fontScaleFactor = floatDisplay / 100.0f;
+				g_SRTSettings.FontScalingFactor = floatDisplay / 100.0f;
 				UI::RescaleFont();
 			}
 		}
@@ -192,9 +192,9 @@ namespace SRTPluginRE9::Hook
 		// Specify a default position/size in case there's no data in the .ini file.
 		ImGuiIO &io = ImGui::GetIO();
 		ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x / 4, io.DisplaySize.y / 4), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowBgAlpha(aboutUIOptions.Opacity);
+		ImGui::SetNextWindowBgAlpha(g_SRTSettings.AboutOpacity);
 
-		if (!ImGui::Begin("SRT: About", (bool *)&aboutUIOptions.Open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
+		if (!ImGui::Begin("SRT: About", (bool *)&aboutUIOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize))
 		{
 			ImGui::End();
 			return;
@@ -280,18 +280,18 @@ namespace SRTPluginRE9::Hook
 		};
 
 		// Don't continue if we're not open.
-		if (!debugLoggerUIOptions.Open)
+		if (!debugLoggerOpen)
 			return;
 
 		ImGuiWindowFlags window_flags = ImGuiWindowFlags_None;
-		if (!mainUIOptions.Open)
+		if (!mainUIOpen)
 			window_flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs;
 
 		ImGui::SetNextWindowPos(ImVec2(250, 10), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(880, 440), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowBgAlpha(debugLoggerUIOptions.Opacity);
+		ImGui::SetNextWindowBgAlpha(g_SRTSettings.LoggerOpacity);
 
-		if (!ImGui::Begin("Logger", &debugLoggerUIOptions.Open, window_flags))
+		if (!ImGui::Begin("Logger", &debugLoggerOpen, window_flags))
 		{
 			ImGui::End();
 			return;
@@ -300,7 +300,7 @@ namespace SRTPluginRE9::Hook
 		// Options menu
 		if (ImGui::BeginPopup("Options"))
 		{
-			ImGui::Checkbox("Auto-scroll", &debugLoggerUIOptions.AutoScroll);
+			ImGui::Checkbox("Auto-scroll", reinterpret_cast<bool *>(&g_SRTSettings.LoggerAutoScroll));
 			ImGui::EndPopup();
 		}
 
@@ -312,7 +312,7 @@ namespace SRTPluginRE9::Hook
 		ImGui::SameLine();
 		const bool copy = ImGui::Button("Copy");
 		ImGui::SameLine();
-		debugLoggerUIOptions.Filter.Draw("Filter", -100.0f);
+		debugLoggerFilter.Draw("Filter", -100.0f);
 
 		ImGui::Separator();
 
@@ -332,13 +332,13 @@ namespace SRTPluginRE9::Hook
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 			const char *buf = localLoggerUIData.Buffer.begin();
 			const char *buf_end = localLoggerUIData.Buffer.end();
-			if (debugLoggerUIOptions.Filter.IsActive())
+			if (debugLoggerFilter.IsActive())
 			{
 				for (int line_no = 0; line_no < localLoggerUIData.LineOffsets.Size; line_no++)
 				{
 					const char *line_start = buf + localLoggerUIData.LineOffsets[line_no];
 					const char *line_end = line_no + 1 < localLoggerUIData.LineOffsets.Size ? buf + localLoggerUIData.LineOffsets[line_no + 1] - 1 : buf_end;
-					if (debugLoggerUIOptions.Filter.PassFilter(line_start, line_end))
+					if (debugLoggerFilter.PassFilter(line_start, line_end))
 						ImGui::TextUnformatted(line_start, line_end);
 				}
 			}
@@ -361,7 +361,7 @@ namespace SRTPluginRE9::Hook
 
 			// Keep up at the bottom of the scroll region if we were already at the bottom at the beginning of the frame.
 			// Using a scrollbar or mouse-wheel will take away from the bottom edge.
-			if (debugLoggerUIOptions.AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+			if (g_SRTSettings.LoggerAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
 				ImGui::SetScrollHereY(1.0f);
 		}
 		ImGui::EndChild();
@@ -371,12 +371,12 @@ namespace SRTPluginRE9::Hook
 	void STDMETHODCALLTYPE UI::DrawDebugOverlay()
 	{
 		ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
-		if (!mainUIOptions.Open)
+		if (!mainUIOpen)
 			window_flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoInputs;
 		ImGui::SetNextWindowPos(ImVec2(8, 145), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(240, 340), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowBgAlpha(debugOverlayUIOptions.Opacity);
-		if (ImGui::Begin("SRT Debug Overlay", &debugOverlayUIOptions.Open, window_flags))
+		ImGui::SetNextWindowBgAlpha(g_SRTSettings.OverlayOpacity);
+		if (ImGui::Begin("SRT Debug Overlay", &overlayOpen, window_flags))
 		{
 			auto readIndex = g_GameDataBufferReadIndex.load(std::memory_order_acquire);
 			const auto &localGameData = g_GameDataBuffers[readIndex].Data;
@@ -390,9 +390,9 @@ namespace SRTPluginRE9::Hook
 			ImGui::Separator();
 
 			// Enemies
-			auto enemiesToShow = std::min(static_cast<size_t>(enemyCountLimit), localGameData.FilteredEnemies.Size);
+			auto enemiesToShow = std::min(static_cast<size_t>(g_SRTSettings.EnemiesShownLimit), localGameData.FilteredEnemies.Size);
 			ImGui::Text("Enemies (%zu of %zu):", enemiesToShow, localGameData.FilteredEnemies.Size);
-			for (const auto &enemyData : std::span<EnemyData>(reinterpret_cast<EnemyData *>(localGameData.FilteredEnemies.Values), localGameData.FilteredEnemies.Size) | std::views::take(enemyCountLimit))
+			for (const auto &enemyData : std::span<EnemyData>(reinterpret_cast<EnemyData *>(localGameData.FilteredEnemies.Values), localGameData.FilteredEnemies.Size) | std::views::take(g_SRTSettings.EnemiesShownLimit))
 			{
 				if (enemyData.HP.CurrentHP != enemyData.HP.MaximumHP)
 					ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "%" PRIi32 " / %" PRIi32, enemyData.HP.CurrentHP, enemyData.HP.MaximumHP);
@@ -405,7 +405,7 @@ namespace SRTPluginRE9::Hook
 
 	void STDMETHODCALLTYPE UI::DrawLogoOverlay()
 	{
-		switch (logoOptions.Position)
+		switch (static_cast<LogoPosition>(g_SRTSettings.LogoPosition))
 		{
 			case LogoPosition::UpperLeft:
 			default:
@@ -429,7 +429,7 @@ namespace SRTPluginRE9::Hook
 			    ImVec2(static_cast<float>(logoWidth) * logoScaleFactor, static_cast<float>(logoHeight) * logoScaleFactor),
 			    ImVec2(0, 0),
 			    ImVec2(1, 1),
-			    ImVec4(1.0f, 1.0f, 1.0f, logoOptions.Opacity),
+			    ImVec4(1.0f, 1.0f, 1.0f, g_SRTSettings.LogoOpacity),
 			    ImVec4(0, 0, 0, 0));
 		}
 		ImGui::End();
@@ -442,8 +442,11 @@ namespace SRTPluginRE9::Hook
 		GetWindowRect(hDesktop, &desktop);
 		horizontal = static_cast<float>(desktop.right);
 		vertical = static_cast<float>(desktop.bottom);
-		dpiScaleFactor = ImGui_ImplWin32_GetDpiScaleForMonitor(::MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));
-		fontScaleFactor = dpiScaleFactor;
+
+		if (g_SRTSettings.DPIScalingFactor == 0.f)
+			g_SRTSettings.DPIScalingFactor = ImGui_ImplWin32_GetDpiScaleForMonitor(::MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));
+		if (g_SRTSettings.FontScalingFactor == 0.f)
+			g_SRTSettings.FontScalingFactor = g_SRTSettings.DPIScalingFactor;
 		UI::RescaleDPI();
 	}
 }

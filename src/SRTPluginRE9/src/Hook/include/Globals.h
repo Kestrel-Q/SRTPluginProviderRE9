@@ -4,6 +4,7 @@
 #include "DeferredWndProc.h"
 #include "DescriptorHeapAllocator.h"
 #include "Logger.h"
+#include "Settings.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -149,5 +150,6 @@ extern DX12HookState g_dx12HookState;
 extern std::atomic<bool> g_shutdownRequested;
 extern std::mutex g_LogMutex;
 extern DeferredWndProc g_DeferredWndProc;
+extern SRTSettings g_SRTSettings;
 
 #endif
