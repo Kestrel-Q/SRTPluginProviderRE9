@@ -465,37 +465,42 @@ namespace SRTPluginRE9::Hook
 		if (!g_dx12HookState.initialized)
 			return oResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, Flags);
 
-		ID3D12Device *device = 0;
-		[[maybe_unused]] ID3D12Device *cachedDevice = (ID3D12Device *)(*g_dx12HookState.device.GetAddressOf());
-		SRT_ASSERT(!FAILED(pSwapChain->GetDevice(IID_PPV_ARGS(&device))));
+		logger->LogMessage("hkResizeBuffers() - Started.\n");
 
-		// NOTE(@j): This line catches invalidation of the device object
-		//  which may occur through certain edge cases on some drivers.
-		// If this assert is ever caught we might need to handle things accordingly.
-		SRT_ASSERTDEBUG(device == cachedDevice);
+		logger->LogMessage("hkResizeBuffers() - Resetting our ID3D12Device before calling GetDevice on the new swapchain pointer...\n");
+		g_dx12HookState.device.Reset(); // Reset our previously created device before getting a new instance.
+		if (FAILED(pSwapChain->GetDevice(IID_PPV_ARGS(&g_dx12HookState.device))))
+		{
+			logger->LogMessage("hkResizeBuffers() - GetDevice failed: {:#x}\n", static_cast<uint32_t>(hResult));
+			return hResult;
+		}
+		else
+			logger->LogMessage("hkResizeBuffers() - GetDevice succeeded.\n");
 
+		logger->LogMessage("hkResizeBuffers() - Invalidating ImGui device objects...\n");
 		ImGui_ImplDX12_InvalidateDeviceObjects();
 
 		// Release render targets before the resize
+		logger->LogMessage("hkResizeBuffers() - Resetting frame context render targets...\n");
 		for (auto &frameContext : g_dx12HookState.frameContexts)
-		{
 			frameContext.renderTarget.Reset();
-		}
 
 		if (FAILED(hResult = oResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, Flags)))
 		{
 			logger->LogMessage("hkResizeBuffers() - oResizeBuffers failed: {:#x}\n", static_cast<uint32_t>(hResult));
-
 			return hResult;
 		}
+		else
+			logger->LogMessage("hkResizeBuffers() - oResizeBuffers succeeded.\n");
 
 		DXGI_SWAP_CHAIN_DESC desc{};
 		if (FAILED(hResult = pSwapChain->GetDesc(&desc)))
 		{
 			logger->LogMessage("hkResizeBuffers() - GetDesc failed: {:#x}\n", static_cast<uint32_t>(hResult));
-
 			return hResult;
 		}
+		else
+			logger->LogMessage("hkResizeBuffers() - GetDesc succeeded.\n");
 
 		// NOTE(@j):
 		// We must recreate RTV descriptors on resize.
@@ -512,7 +517,7 @@ namespace SRTPluginRE9::Hook
 
 		UINT rtvCapacity = g_dx12HookState.bufferCount;
 		logger->LogMessage("hkResizeBuffers() - Reallocating RTV ({}) Heaps\n", rtvCapacity);
-		auto rtvResult = rtv.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, rtvCapacity, false);
+		auto rtvResult = rtv.Init(g_dx12HookState.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, rtvCapacity, false);
 		if (!rtvResult)
 		{
 			auto error = rtvResult.error();
@@ -531,18 +536,22 @@ namespace SRTPluginRE9::Hook
 
 			if (FAILED(hResult = pSwapChain->GetBuffer(i, IID_PPV_ARGS(&frameContext.renderTarget))))
 			{
-				logger->LogMessage("initImGui() - GetBuffer failed: {:#x}\n", static_cast<uint32_t>(hResult));
-
+				logger->LogMessage("hkResizeBuffers() - GetBuffer failed: {:#x}\n", static_cast<uint32_t>(hResult));
 				return false;
 			}
+			else
+				logger->LogMessage("hkResizeBuffers() - GetBuffer({}, ...) succeeded.\n", i);
 
-			device->CreateRenderTargetView(frameContext.renderTarget.Get(), 0, rtvHandle.cpu);
+			g_dx12HookState.device->CreateRenderTargetView(frameContext.renderTarget.Get(), 0, rtvHandle.cpu);
 		}
 
+		logger->LogMessage("hkResizeBuffers() - Creating ImGui device objects...\n");
 		ImGui_ImplDX12_CreateDeviceObjects();
 
+		logger->LogMessage("hkResizeBuffers() - Recalculating game window size and DPIs...\n");
 		srtUI->GameWindowResized();
 
+		logger->LogMessage("hkResizeBuffers() - Done.\n");
 		return hResult;
 	}
 
