@@ -161,9 +161,9 @@ extern SRTSettings g_SRTSettings;
 
 #if defined(DEBUG) || defined(_DEBUG)
 #ifdef IM_ASSERT
-#define SRT_ASSERTDEBUG(_EXPR) IM_ASSERT(_EXPR)
+#define SRT_ASSERTDEBUG(_EXPR) (IM_ASSERT(_EXPR))
 #elifdef assert
-#define SRT_ASSERTDEBUG(_EXPR) assert(_EXPR)
+#define SRT_ASSERTDEBUG(_EXPR) (assert(_EXPR))
 #else
 #define SRT_ASSERTDEBUG(_EXPR) ((void)(_EXPR))
 #endif
@@ -172,9 +172,9 @@ extern SRTSettings g_SRTSettings;
 #endif
 
 #ifdef IM_ASSERT
-#define SRT_ASSERT(_EXPR) IM_ASSERT(_EXPR)
+#define SRT_ASSERT(_EXPR) (IM_ASSERT(_EXPR))
 #elifdef assert
-#define SRT_ASSERT(_EXPR) assert(_EXPR)
+#define SRT_ASSERT(_EXPR) (assert(_EXPR))
 #endif
 
 #endif
