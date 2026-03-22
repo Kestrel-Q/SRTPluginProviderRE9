@@ -571,7 +571,7 @@ namespace SRTPluginRE9::Hook
 
 		ImGui_ImplDX12_CreateDeviceObjects();
 
-		srtUI->DesktopResized();
+		srtUI->GameWindowResized();
 
 		return hResult;
 	}
@@ -776,9 +776,9 @@ namespace SRTPluginRE9::Hook
 			                                       std::ranges::to<std::vector>();
 
 			constexpr auto compare = OrderByDescending([](const EnemyData &enemyData)
-			                                 { return enemyData.HP.CurrentHP < enemyData.HP.MaximumHP; })
-			                   .ThenByDescending([](const EnemyData &enemyData)
-			                                     { return enemyData.HP.MaximumHP; });
+			                                           { return enemyData.HP.CurrentHP < enemyData.HP.MaximumHP; })
+			                             .ThenByDescending([](const EnemyData &enemyData)
+			                                               { return enemyData.HP.MaximumHP; });
 			std::ranges::sort(localGameData.FilteredEnemiesBacking, compare);
 
 			localGameData.Data.FilteredEnemies = InteropArray{

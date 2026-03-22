@@ -37,7 +37,7 @@ namespace SRTPluginRE9::Hook
 			IM_ASSERT(ret);
 		}
 
-		DesktopResized();
+		GameWindowResized();
 	}
 
 	UI::~UI()
@@ -90,6 +90,11 @@ namespace SRTPluginRE9::Hook
 		auto opacityDisplay = opacity * 100.0f;
 		if (ImGui::SliderFloat(text, &opacityDisplay, minimumOpacity, maximumOpacity, "%.0f%%"))
 			opacity = opacityDisplay / 100.0f;
+	}
+
+	void STDMETHODCALLTYPE BarSizeSlider(const char *text, float &barSize, float &&minSize, float &&maxSize)
+	{
+		ImGui::SliderFloat(text, &barSize, minSize, maxSize, "%.0f");
 	}
 
 	void STDMETHODCALLTYPE UI::ToggleUI()
@@ -184,6 +189,16 @@ namespace SRTPluginRE9::Hook
 				UI::RescaleFont();
 			}
 		}
+
+		ImGui::Checkbox("Show HP bars", reinterpret_cast<bool *>(&g_SRTSettings.EnemyHPBarsVisible));
+		if (g_SRTSettings.EnemyHPBarsVisible)
+		{
+			ImGui::SameLine();
+			ImGui::Checkbox("Show HP percent", reinterpret_cast<bool *>(&g_SRTSettings.EnemyHPBarsShowPercent));
+			BarSizeSlider("Width", g_SRTSettings.EnemyHPBarsWidth, 20.0f, 300.0f);
+			BarSizeSlider("Height", g_SRTSettings.EnemyHPBarsHeight, 2.0f, 30.0f);
+		}
+		ImGui::Checkbox("Hide full HP enemies", reinterpret_cast<bool *>(&g_SRTSettings.EnemiesHideFullHP));
 
 		ImGui::End();
 	}
@@ -396,7 +411,7 @@ namespace SRTPluginRE9::Hook
 
 			for (const auto &enemyData : std::span(static_cast<EnemyData *>(localGameData.FilteredEnemies.Values), localGameData.FilteredEnemies.Size) | std::views::take(g_SRTSettings.EnemiesShownLimit))
 			{
-				if (enemyData.HP.CurrentHP >= 1000000)
+				if (enemyData.HP.CurrentHP >= 1'000'000 || (g_SRTSettings.EnemiesHideFullHP && enemyData.HP.CurrentHP == enemyData.HP.MaximumHP))
 				{
 					continue;
 				}
@@ -410,6 +425,32 @@ namespace SRTPluginRE9::Hook
 					ImGui::Text("%s %" PRIi32 " / %" PRIi32, name_display.c_str(), enemyData.HP.CurrentHP, enemyData.HP.MaximumHP);
 				}
 
+				if (g_SRTSettings.EnemyHPBarsVisible)
+				{
+					const auto hpPercent = enemyData.HP.MaximumHP > 0
+					                           ? static_cast<float>(enemyData.HP.CurrentHP) / static_cast<float>(enemyData.HP.MaximumHP)
+					                           : 0.0f;
+
+					// Fill color
+					ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.20f, 0.80f, 0.20f, 1.00f));
+
+					// Back color
+					ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.20f, 0.20f, 0.80f, 1.00f));
+
+					// Scale by the font scale factor so that the bars remain proportional to the text size
+					const auto width = g_SRTSettings.EnemyHPBarsWidth * g_SRTSettings.FontScalingFactor;
+					const auto height = g_SRTSettings.EnemyHPBarsHeight * g_SRTSettings.FontScalingFactor;
+
+					ImGui::ProgressBar(hpPercent, ImVec2(width, height), "");
+
+					ImGui::PopStyleColor(2);
+
+					if (g_SRTSettings.EnemyHPBarsShowPercent)
+					{
+						ImGui::SameLine();
+						ImGui::Text("%.1f%%", hpPercent * 100.0f);
+					}
+				}
 			}
 		}
 		ImGui::End();
@@ -447,13 +488,12 @@ namespace SRTPluginRE9::Hook
 		ImGui::End();
 	}
 
-	void STDMETHODCALLTYPE UI::DesktopResized()
+	void STDMETHODCALLTYPE UI::GameWindowResized()
 	{
-		const HWND hDesktop = GetDesktopWindow();
-		RECT desktop;
-		GetWindowRect(hDesktop, &desktop);
-		horizontal = static_cast<float>(desktop.right);
-		vertical = static_cast<float>(desktop.bottom);
+		RECT gameWindowSize;
+		GetWindowRect(g_dx12HookState.gameWindow, &gameWindowSize);
+		horizontal = static_cast<float>(gameWindowSize.right);
+		vertical = static_cast<float>(gameWindowSize.bottom);
 
 		if (g_SRTSettings.DPIScalingFactor == 0.f)
 			g_SRTSettings.DPIScalingFactor = ImGui_ImplWin32_GetDpiScaleForMonitor(::MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));

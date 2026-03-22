@@ -1,10 +1,19 @@
 #ifndef SRTPLUGINRE9_GLOBALS_H
 #define SRTPLUGINRE9_GLOBALS_H
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include "DeferredWndProc.h"
 #include "DescriptorHeapAllocator.h"
 #include "Logger.h"
 #include "Settings.h"
+#include <assert.h>
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -301,5 +310,18 @@ static bool AreAssertsIgnoredForThisCode(const char* FileName, const int Line, i
 	(void)(Line);
 	return (Result);
 }
+
+// TODO: Requires cleanup pass
+#if defined(DEBUG) || defined(_DEBUG)
+#ifdef IM_ASSERT
+#define SRT_ASSERTDEBUG(_EXPR) (IM_ASSERT(_EXPR))
+#elifdef SRT_Assert
+#define SRT_ASSERTDEBUG(_EXPR) (SRT_Assert(_EXPR))
+#else
+#define SRT_ASSERTDEBUG(_EXPR) ((void)(_EXPR))
+#endif
+#else
+#define SRT_ASSERTDEBUG(_EXPR) ((void)(_EXPR))
+#endif
 
 #endif

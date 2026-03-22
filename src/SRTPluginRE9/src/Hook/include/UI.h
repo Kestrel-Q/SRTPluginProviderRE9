@@ -1,6 +1,10 @@
 #ifndef SRTPLUGINRE9_UI_H
 #define SRTPLUGINRE9_UI_H
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -31,7 +35,7 @@ namespace SRTPluginRE9::Hook
 		~UI();
 		void STDMETHODCALLTYPE DrawUI();
 		void STDMETHODCALLTYPE ToggleUI();
-		void STDMETHODCALLTYPE DesktopResized();
+		void STDMETHODCALLTYPE GameWindowResized();
 
 	private:
 		void STDMETHODCALLTYPE RescaleDPI();

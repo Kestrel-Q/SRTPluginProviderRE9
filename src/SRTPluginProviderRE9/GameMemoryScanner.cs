@@ -1,6 +1,9 @@
-﻿using ProcessMemory;
-using System;
+﻿using System;
 using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Runtime.CompilerServices;
+using ProcessMemory;
 
 namespace SRTPluginProviderRE9;
 
@@ -15,11 +18,16 @@ internal class GameMemoryScanner : IDisposable
     public uint ProcessExitCode => (memoryAccess is not null) ? memoryAccess.ProcessExitCode : 0;
 
     // Pointer Address Variables
-    private int pointerPropsManager;
+    private int pointerAppRankManager;
+    private int pointerAppCharacterManager;
 
     // Pointer Classes
     private IntPtr BaseAddress { get; set; }
-    private MultilevelPointer PointerPlayerHP { get; set; }
+    private MultilevelPointer PointerRankProfile { get; set; }
+    private MultilevelPointer PointerPlayerContext { get; set; }
+    private MultilevelPointer PointerEnemyContextList { get; set; }
+    private MultilevelPointer[] PointerEnemyContexts { get; set; }
+
 
     internal GameMemoryScanner(Process? process = null)
     {
@@ -50,34 +58,99 @@ internal class GameMemoryScanner : IDisposable
             case GameVersion.WW_20260225_1:
             default:
                 {
-                    pointerPropsManager = 0x00000000; // app.PropsManager
+                    pointerAppRankManager = 0x0E815400; // app.RankManager
+                    pointerAppCharacterManager = 0x0E843CF8; // app.CharacterManager
                     break;
                 }
         }
 
         // Setup the pointers.
-        PointerPlayerHP = new MultilevelPointer(
+        PointerRankProfile = new MultilevelPointer(
             memoryAccess,
-            (nint*)IntPtr.Add(BaseAddress, pointerPropsManager),
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            0x00
+            (nint*)IntPtr.Add(BaseAddress, pointerAppRankManager),
+            0x30
         );
+
+        PointerPlayerContext = new MultilevelPointer(
+            memoryAccess,
+            (nint*)IntPtr.Add(BaseAddress, pointerAppCharacterManager),
+            0xB0
+        );
+
+        PointerEnemyContextList = new MultilevelPointer(
+            memoryAccess,
+            (nint*)IntPtr.Add(BaseAddress, pointerAppCharacterManager),
+            0xB8
+        );
+
+        RefreshEnemyContexts(PointerEnemyContextList.DerefInt(0x18));
+    }
+
+    private unsafe void RefreshEnemyContexts(int enemyContextCount)
+    {
+        PointerEnemyContexts = new MultilevelPointer[enemyContextCount];
+        gameMemoryValues.EnemyContexts = new EnemyContext[enemyContextCount];
+        for (var i = 0; i < PointerEnemyContexts.Length; ++i)
+        {
+            PointerEnemyContexts[i] = new MultilevelPointer(
+                memoryAccess,
+                (nint*)IntPtr.Add(BaseAddress, pointerAppCharacterManager),
+                0xB8,
+                0x10,
+                0x20 + (i * 0x8)
+            );
+        }
+    }
+
+    public unsafe T DerefChain<T>(IntPtr baseAddress, params int[] offsets) where T : unmanaged
+    {
+        for (var i = 0; i < offsets.Length - 1; ++i)
+            baseAddress = memoryAccess.GetNIntAt(IntPtr.Add(baseAddress, offsets[i]).ToPointer());
+        return memoryAccess.GetAt<T>(IntPtr.Add(baseAddress, offsets[offsets.Length - 1]).ToPointer());
     }
 
     internal void UpdatePointers()
     {
-        PointerPlayerHP.UpdatePointers();
+        PointerRankProfile.UpdatePointers();
+        PointerPlayerContext.UpdatePointers();
+        PointerEnemyContextList.UpdatePointers();
+        var enemyContextCount = PointerEnemyContextList.DerefInt(0x18);
+        if (enemyContextCount != PointerEnemyContexts.Length)
+            RefreshEnemyContexts(enemyContextCount);
+        else
+            for (var i = 0; i < PointerEnemyContexts.Length; ++i)
+                PointerEnemyContexts[i].UpdatePointers();
     }
 
     internal unsafe IGameMemory Refresh()
     {
-        //Player HP
-        //gameMemoryValues._player = PointerPlayerHP.Deref<GamePlayer>(0x00);
+        // DA
+        gameMemoryValues.DAScore = PointerRankProfile.DerefInt(0x14);
+        gameMemoryValues.DARank = PointerRankProfile.DerefInt(0x18);
+
+        // Player HP
+        gameMemoryValues.PlayerContext = new PlayerContext
+        {
+            HP = new HPData
+            {
+                CurrentHP = DerefChain<int>(PointerPlayerContext.Address, 0x70, 0x10, 0x28),
+                CurrentMaxHP = DerefChain<int>(PointerPlayerContext.Address, 0x70, 0x10, 0x30)
+            }
+        };
+
+        // Enemy HPs
+        for (var i = 0; i < PointerEnemyContexts.Length; ++i)
+        {
+            gameMemoryValues.EnemyContexts[i] = new EnemyContext
+            {
+                KindID = PointerEnemyContexts[i].DerefUShort(0x40),
+                HP = new HPData
+                {
+                    CurrentHP = DerefChain<int>(PointerEnemyContexts[i].Address, 0x70, 0x10, 0x28),
+                    CurrentMaxHP = DerefChain<int>(PointerEnemyContexts[i].Address, 0x70, 0x10, 0x30)
+                }
+            };
+        }
 
         HasScanned = true;
         return gameMemoryValues;
