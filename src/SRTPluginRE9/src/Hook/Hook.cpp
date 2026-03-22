@@ -459,11 +459,12 @@ namespace SRTPluginRE9::Hook
 		return presentResult;
 	}
 
-	// This function fully flushes the GPU comamnd queue to ensure all previously submitted work is completed.
-	void WaitForPreviousFramesResources() {
+	// This function fully flushes the GPU command queue to ensure all previously submitted work is completed.
+	static inline void WaitForGPU() {
 		if (!g_dx12HookState.fence || !g_dx12HookState.fenceEvent) return;
 		// TODO: Proper error handling here
 		
+		HRESULT hr = S_OK;
 		auto &CommandQueue = g_dx12HookState.commandQueue;
 		
 		g_dx12HookState.fenceValue++; // TODO: This should really be named lastSignaledFenceValue
@@ -471,11 +472,10 @@ namespace SRTPluginRE9::Hook
 		if (FAILED(CommandQueue->Signal(g_dx12HookState.fence.Get(), fenceValue)))
 			return;
 
-		HRESULT hr = S_OK;
 		auto CompletionValue = g_dx12HookState.fence->GetCompletedValue();
 		if (CompletionValue < fenceValue) {
 			if (FAILED(hr = g_dx12HookState.fence->SetEventOnCompletion(fenceValue, g_dx12HookState.fenceEvent))) {
-				logger->LogMessage("WaitForPreviousFramesResources(): SetEventOnCompletion on g_dx12HookState.fence failed with {}\n", hr);
+				logger->LogMessage("WaitForGPU(): SetEventOnCompletion on g_dx12HookState.fence failed with {}\n", hr);
 				return;
 			}
 
@@ -503,7 +503,7 @@ namespace SRTPluginRE9::Hook
 		(void)(cachedDevice);
 #endif
 
-		WaitForPreviousFramesResources();
+		WaitForGPU();
 
 		ImGui_ImplDX12_InvalidateDeviceObjects();
 
