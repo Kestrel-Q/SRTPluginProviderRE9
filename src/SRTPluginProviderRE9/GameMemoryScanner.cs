@@ -1,5 +1,8 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Runtime.CompilerServices;
 using ProcessMemory;
 
 namespace SRTPluginProviderRE9;
@@ -21,7 +24,7 @@ internal class GameMemoryScanner : IDisposable
     // Pointer Classes
     private IntPtr BaseAddress { get; set; }
     private MultilevelPointer PointerRankProfile { get; set; }
-    private MultilevelPointer PointerPlayerContextHP { get; set; }
+    private MultilevelPointer PointerPlayerContext { get; set; }
     private MultilevelPointer PointerEnemyContextList { get; set; }
     private MultilevelPointer[] PointerEnemyContexts { get; set; }
 
@@ -68,12 +71,10 @@ internal class GameMemoryScanner : IDisposable
             0x30
         );
 
-        PointerPlayerContextHP = new MultilevelPointer(
+        PointerPlayerContext = new MultilevelPointer(
             memoryAccess,
             (nint*)IntPtr.Add(BaseAddress, pointerAppCharacterManager),
-            0xB0,
-            0x70,
-            0x10
+            0xB0
         );
 
         PointerEnemyContextList = new MultilevelPointer(
@@ -88,7 +89,7 @@ internal class GameMemoryScanner : IDisposable
     private unsafe void RefreshEnemyContexts(int enemyContextCount)
     {
         PointerEnemyContexts = new MultilevelPointer[enemyContextCount];
-        gameMemoryValues.EnemyHPs = new HPData[enemyContextCount];
+        gameMemoryValues.EnemyContexts = new EnemyContext[enemyContextCount];
         for (var i = 0; i < PointerEnemyContexts.Length; ++i)
         {
             PointerEnemyContexts[i] = new MultilevelPointer(
@@ -96,17 +97,22 @@ internal class GameMemoryScanner : IDisposable
                 (nint*)IntPtr.Add(BaseAddress, pointerAppCharacterManager),
                 0xB8,
                 0x10,
-                0x20 + (i * 0x8),
-                0x70,
-                0x10
+                0x20 + (i * 0x8)
             );
         }
+    }
+
+    public unsafe T DerefChain<T>(IntPtr baseAddress, params int[] offsets) where T : unmanaged
+    {
+        for (var i = 0; i < offsets.Length - 1; ++i)
+            baseAddress = memoryAccess.GetNIntAt(IntPtr.Add(baseAddress, offsets[i]).ToPointer());
+        return memoryAccess.GetAt<T>(IntPtr.Add(baseAddress, offsets[offsets.Length - 1]).ToPointer());
     }
 
     internal void UpdatePointers()
     {
         PointerRankProfile.UpdatePointers();
-        PointerPlayerContextHP.UpdatePointers();
+        PointerPlayerContext.UpdatePointers();
         PointerEnemyContextList.UpdatePointers();
         var enemyContextCount = PointerEnemyContextList.DerefInt(0x18);
         if (enemyContextCount != PointerEnemyContexts.Length)
@@ -123,19 +129,26 @@ internal class GameMemoryScanner : IDisposable
         gameMemoryValues.DARank = PointerRankProfile.DerefInt(0x18);
 
         // Player HP
-        gameMemoryValues.PlayerHP = new HPData
+        gameMemoryValues.PlayerContext = new PlayerContext
         {
-            CurrentHP = PointerPlayerContextHP.DerefInt(0x28),
-            CurrentMaxHP = PointerPlayerContextHP.DerefInt(0x30)
+            HP = new HPData
+            {
+                CurrentHP = DerefChain<int>(PointerPlayerContext.Address, 0x70, 0x10, 0x28),
+                CurrentMaxHP = DerefChain<int>(PointerPlayerContext.Address, 0x70, 0x10, 0x30)
+            }
         };
 
         // Enemy HPs
         for (var i = 0; i < PointerEnemyContexts.Length; ++i)
         {
-            gameMemoryValues.EnemyHPs[i] = new HPData
+            gameMemoryValues.EnemyContexts[i] = new EnemyContext
             {
-                CurrentHP = PointerEnemyContexts[i].DerefInt(0x28),
-                CurrentMaxHP = PointerEnemyContexts[i].DerefInt(0x30)
+                KindID = PointerEnemyContexts[i].DerefUShort(0x40),
+                HP = new HPData
+                {
+                    CurrentHP = DerefChain<int>(PointerEnemyContexts[i].Address, 0x70, 0x10, 0x28),
+                    CurrentMaxHP = DerefChain<int>(PointerEnemyContexts[i].Address, 0x70, 0x10, 0x30)
+                }
             };
         }
 

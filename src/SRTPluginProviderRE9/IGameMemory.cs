@@ -8,6 +8,6 @@ public interface IGameMemory
     int DARank { get; }
     int DAScore { get; }
 
-    HPData PlayerHP { get; }
-    HPData[] EnemyHPs { get; }
+    PlayerContext PlayerContext { get; }
+    EnemyContext[] EnemyContexts { get; }
 }

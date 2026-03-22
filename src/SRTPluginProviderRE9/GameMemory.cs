@@ -11,6 +11,6 @@ internal class GameMemory : IGameMemory
     public int DARank { get; set; }
     public int DAScore { get; set; }
 
-    public HPData PlayerHP { get; set; }
-    public HPData[] EnemyHPs { get; set; }
+    public PlayerContext PlayerContext { get; set; }
+    public EnemyContext[] EnemyContexts { get; set; }
 }
