@@ -1,5 +1,6 @@
 #include "UI.h"
 #include "CompositeOrderer.h"
+#include "DX12Hook.h"
 #include "EnemyIds.h"
 #include "GameObjects.h"
 #include "Globals.h"
@@ -20,7 +21,8 @@ namespace SRTPluginRE9::Hook
 	UI::UI()
 	{
 		logger->LogMessage("UI::ctor() - Allocating on SRV heap for logo.\n");
-		logoHandle = g_dx12HookState.heaps.srv.Allocate();
+		auto &hs = DX12Hook::DX12Hook::GetInstance().GetHookStateMut();
+		logoHandle = hs.heaps.srv.Allocate();
 		logoWidth = g_srtLogo_width;
 		logoHeight = g_srtLogo_height;
 		logger->LogMessage("UI::ctor() - Allocated handle {:p} on SRV heap.\n", reinterpret_cast<void *>(logoHandle.cpu.ptr));
@@ -29,7 +31,7 @@ namespace SRTPluginRE9::Hook
 		    g_srtLogo.data(),
 		    logoWidth,
 		    logoHeight,
-		    g_dx12HookState.device.Get(),
+		    hs.device,
 		    logoHandle.cpu,
 		    &logoTexture);
 		{
@@ -491,7 +493,7 @@ namespace SRTPluginRE9::Hook
 	void STDMETHODCALLTYPE UI::GameWindowResized()
 	{
 		RECT gameWindowSize;
-		GetWindowRect(g_dx12HookState.gameWindow, &gameWindowSize);
+		GetWindowRect(DX12Hook::DX12Hook::GetInstance().GetHookState().gameWindow, &gameWindowSize);
 		horizontal = static_cast<float>(gameWindowSize.right);
 		vertical = static_cast<float>(gameWindowSize.bottom);
 

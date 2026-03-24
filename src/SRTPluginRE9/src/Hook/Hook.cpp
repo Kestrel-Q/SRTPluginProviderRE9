@@ -3,7 +3,6 @@
 #endif
 
 #include "Hook.h"
-#include "AOBScanner.h"
 #include "CompositeOrderer.h"
 #include "DeferredWndProc.h"
 #include "Globals.h"
@@ -11,9 +10,11 @@
 #include "Settings.h"
 #include "UI.h"
 #include "imgui_impl_win32.h"
+#include <MinHook.h>
 #include <algorithm>
 #include <cinttypes>
 #include <functional>
+#include <imgui_impl_dx12.h>
 #include <mutex>
 #include <optional>
 #include <ranges>
@@ -21,7 +22,6 @@
 constinit uint32_t memoryReadIntervalInMS = 16U;
 
 std::optional<std::uintptr_t> g_BaseAddress;
-inline DX12HookState g_dx12HookState{};
 std::unique_ptr<SRTPluginRE9::Hook::UI> srtUI;
 
 inline std::atomic<uint32_t> g_framesSinceInit = 0;
@@ -139,7 +139,7 @@ namespace SRTPluginRE9::Hook
 			}
 		}
 
-		return CallWindowProcW(g_dx12HookState.origWndProc, hwnd, msg, wParam, lParam);
+		return CallWindowProcW(DX12Hook::DX12Hook::GetInstance().GetHookState().origWndProc, hwnd, msg, wParam, lParam);
 	}
 
 	static bool IsKeyboardDevice(IDirectInputDevice8W *pDevice)
@@ -153,7 +153,7 @@ namespace SRTPluginRE9::Hook
 
 	HRESULT CALLBACK hkGetDeviceState(IDirectInputDevice8W *pDevice, DWORD cbData, LPVOID lpvData)
 	{
-		HRESULT hr = oGetDeviceState(pDevice, cbData, lpvData);
+		HRESULT hr = DInput8Hook::DInput8Hook::GetInstance().GetOriginalGetDeviceState()(pDevice, cbData, lpvData);
 		if (SUCCEEDED(hr) && lpvData && ImGui::GetCurrentContext())
 		{
 			if (ImGui::GetIO().WantCaptureKeyboard && IsKeyboardDevice(pDevice))
@@ -167,7 +167,7 @@ namespace SRTPluginRE9::Hook
 
 	HRESULT CALLBACK hkGetDeviceData(IDirectInputDevice8W *pDevice, DWORD cbObjectData, LPDIDEVICEOBJECTDATA rgdod, LPDWORD pdwInOut, DWORD dwFlags)
 	{
-		HRESULT hr = oGetDeviceData(pDevice, cbObjectData, rgdod, pdwInOut, dwFlags);
+		HRESULT hr = DInput8Hook::DInput8Hook::GetInstance().GetOriginalGetDeviceData()(pDevice, cbObjectData, rgdod, pdwInOut, dwFlags);
 		if (SUCCEEDED(hr) && ImGui::GetCurrentContext())
 		{
 			if (ImGui::GetIO().WantCaptureKeyboard && IsKeyboardDevice(pDevice))
@@ -180,80 +180,13 @@ namespace SRTPluginRE9::Hook
 		return hr;
 	}
 
-	bool initImGui(IDXGISwapChain3 *pSwapChain)
+	static bool initImGuiOverlay(IDXGISwapChain3 *pSwapChain)
 	{
-		HRESULT hResult = S_OK;
-		static_assert(sizeof(ImTextureID) >= sizeof(D3D12_CPU_DESCRIPTOR_HANDLE), "D3D12_CPU_DESCRIPTOR_HANDLE is too large to fit in an ImTextureID");
-
-		if (FAILED(hResult = pSwapChain->GetDevice(IID_PPV_ARGS(&g_dx12HookState.device))))
-		{
-			logger->LogMessage("initImGui() - GetDevice failed: {:#x}\n", static_cast<uint32_t>(hResult));
-			return false;
-		}
-
-		logger->LogMessage("initImGui() - Using command queue: {:p}\n",
-		                   reinterpret_cast<void *>(g_dx12HookState.commandQueue));
+		auto &hookState = DX12Hook::DX12Hook::GetInstance().GetHookState();
 
 		DXGI_SWAP_CHAIN_DESC desc{};
 		pSwapChain->GetDesc(&desc);
-		g_dx12HookState.bufferCount = desc.BufferCount;
-		g_dx12HookState.gameWindow = desc.OutputWindow;
-		g_dx12HookState.frameContexts.resize(g_dx12HookState.bufferCount);
-
 		auto backBufferFormat = desc.BufferDesc.Format;
-		logger->LogMessage("initImGui() - BufferCount={}, Format={}, Window={:p}\n",
-		                   g_dx12HookState.bufferCount,
-		                   static_cast<uint32_t>(backBufferFormat),
-		                   reinterpret_cast<void *>(g_dx12HookState.gameWindow));
-
-		UINT rtvCapacity = g_dx12HookState.bufferCount;
-		UINT srvCapacity = 64; // (1 ImGui font + n textures)
-		logger->LogMessage("initImGui() - Allocating RTV ({}) and CBV, SRV, UAV ({}) Heaps\n", rtvCapacity, srvCapacity);
-
-		auto heapResult = g_dx12HookState.heaps.Init(g_dx12HookState.device.Get(),
-		                                             rtvCapacity,
-		                                             srvCapacity);
-		if (!heapResult)
-		{
-			logger->LogMessage("initImGui() - Heap init failed: {}\n", heapResult.error());
-
-			return false;
-		}
-
-		for (UINT i = 0; i < g_dx12HookState.bufferCount; ++i)
-		{
-			auto &frameContext = g_dx12HookState.frameContexts[i];
-			auto rtvHandle = g_dx12HookState.heaps.rtv.Allocate();
-			frameContext.rtvHandle = rtvHandle.cpu;
-
-			if (FAILED(hResult = pSwapChain->GetBuffer(i, IID_PPV_ARGS(&frameContext.renderTarget))))
-			{
-				logger->LogMessage("initImGui() - GetBuffer failed: {:#x}\n", static_cast<uint32_t>(hResult));
-
-				return false;
-			}
-
-			D3D12_RENDER_TARGET_VIEW_DESC rtvDesc{
-			    .Format = backBufferFormat,
-			    .ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D,
-			};
-
-			g_dx12HookState.device->CreateRenderTargetView(frameContext.renderTarget.Get(), &rtvDesc, rtvHandle.cpu);
-			if (FAILED(hResult = g_dx12HookState.device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&frameContext.commandAllocator))))
-			{
-				logger->LogMessage("initImGui() - CreateCommandAllocator failed: {:#x}\n", static_cast<uint32_t>(hResult));
-
-				return false;
-			}
-		}
-
-		if (FAILED(hResult = g_dx12HookState.device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, g_dx12HookState.frameContexts[0].commandAllocator.Get(), nullptr, IID_PPV_ARGS(&g_dx12HookState.commandList))))
-		{
-			logger->LogMessage("initImGui() - CreateCommandList failed: {:#x}\n", static_cast<uint32_t>(hResult));
-
-			return false;
-		}
-		g_dx12HookState.commandList->Close();
 
 		ImGui_ImplWin32_EnableDpiAwareness();
 
@@ -275,26 +208,28 @@ namespace SRTPluginRE9::Hook
 		style.FontSizeBase = 16.0f;
 		io.Fonts->AddFontDefaultVector();
 
-		ImGui_ImplWin32_Init(g_dx12HookState.gameWindow);
+		ImGui_ImplWin32_Init(hookState.gameWindow);
 
 		ImGui_ImplDX12_InitInfo init_info = {};
-		init_info.Device = g_dx12HookState.device.Get();
-		init_info.CommandQueue = g_dx12HookState.commandQueue;
-		init_info.NumFramesInFlight = static_cast<int>(g_dx12HookState.bufferCount);
+		init_info.Device = hookState.device;
+		init_info.CommandQueue = hookState.commandQueue;
+		init_info.NumFramesInFlight = static_cast<int>(hookState.bufferCount);
 		init_info.RTVFormat = backBufferFormat;
 		init_info.DSVFormat = DXGI_FORMAT_UNKNOWN;
 		// Allocating SRV descriptors (for textures) is up to the application, so we provide callbacks.
 		// (current version of the backend will only allocate one descriptor, future versions will need to allocate more)
-		init_info.SrvDescriptorHeap = g_dx12HookState.heaps.srv.GetHeap();
+		init_info.SrvDescriptorHeap = hookState.heaps.srv.GetHeap();
 		init_info.SrvDescriptorAllocFn = [](ImGui_ImplDX12_InitInfo *, D3D12_CPU_DESCRIPTOR_HANDLE *out_cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE *out_gpu_handle)
 		{
-			auto allocHandles = g_dx12HookState.heaps.srv.Allocate();
+			auto &hs = DX12Hook::DX12Hook::GetInstance().GetHookStateMut();
+			auto allocHandles = hs.heaps.srv.Allocate();
 			*out_cpu_handle = allocHandles.cpu;
 			*out_gpu_handle = allocHandles.gpu;
 		};
 		init_info.SrvDescriptorFreeFn = [](ImGui_ImplDX12_InitInfo *, D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle)
 		{
-			g_dx12HookState.heaps.srv.Free(cpu_handle.ptr, gpu_handle.ptr);
+			auto &hs = DX12Hook::DX12Hook::GetInstance().GetHookStateMut();
+			hs.heaps.srv.Free(cpu_handle.ptr, gpu_handle.ptr);
 		};
 		ImGui_ImplDX12_Init(&init_info);
 
@@ -302,25 +237,16 @@ namespace SRTPluginRE9::Hook
 		srtUI = std::make_unique<SRTPluginRE9::Hook::UI>();
 		logger->SetUIPtr(srtUI.get());
 
-		if (FAILED(hResult = g_dx12HookState.device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_dx12HookState.fence))))
-		{
-			logger->LogMessage("initImGui() - CreateFence failed: {:#x}\n", static_cast<uint32_t>(hResult));
-
-			return false;
-		}
-		g_dx12HookState.fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-
-		g_dx12HookState.origWndProc = reinterpret_cast<WNDPROC>(
-		    SetWindowLongPtrW(g_dx12HookState.gameWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(hkWndProc)));
-
-		g_dx12HookState.initialized = true;
-		logger->LogMessage("initImGui() - completed successfully.\n");
+		logger->LogMessage("initImGuiOverlay() - completed successfully.\n");
 
 		return true;
 	}
 
 	HRESULT STDMETHODCALLTYPE hkPresent(IDXGISwapChain3 *pSwapChain, UINT SyncInterval, UINT Flags)
 	{
+		auto &dx12 = DX12Hook::DX12Hook::GetInstance();
+		auto oPresent = dx12.GetOriginalPresent();
+
 		if (g_shutdownRequested.load())
 			return oPresent(pSwapChain, SyncInterval, Flags);
 
@@ -328,7 +254,9 @@ namespace SRTPluginRE9::Hook
 		if (g_framesSinceInit.fetch_add(1) < framesUntilInit)
 			return oPresent(pSwapChain, SyncInterval, Flags);
 
-		if (!g_dx12HookState.initialized)
+		auto &hookState = dx12.GetHookStateMut();
+
+		if (!hookState.initialized)
 		{
 			// Snapshot the last DIRECT queue seen before this Present call.
 			// This is the game's rendering queue — the one that just submitted
@@ -337,15 +265,21 @@ namespace SRTPluginRE9::Hook
 				std::lock_guard lock(g_queueMutex);
 				if (!g_lastSeenDirectQueue)
 					return oPresent(pSwapChain, SyncInterval, Flags);
-				g_dx12HookState.commandQueue = g_lastSeenDirectQueue;
+				hookState.commandQueue = g_lastSeenDirectQueue;
 			}
 
 			logger->LogMessage("hkPresent() - Captured queue {:p} (last DIRECT queue before Present)\n",
-			                   reinterpret_cast<void *>(g_dx12HookState.commandQueue));
+			                   reinterpret_cast<void *>(hookState.commandQueue));
 
-			if (!initImGui(pSwapChain))
+			if (FAILED(dx12.Initialize(pSwapChain, reinterpret_cast<LONG_PTR>(hkWndProc))))
 			{
-				g_dx12HookState.commandQueue = nullptr; // reset on failure
+				hookState.commandQueue = nullptr; // reset on failure
+				return oPresent(pSwapChain, SyncInterval, Flags);
+			}
+
+			if (!initImGuiOverlay(pSwapChain))
+			{
+				hookState.commandQueue = nullptr; // reset on failure
 				return oPresent(pSwapChain, SyncInterval, Flags);
 			}
 
@@ -358,7 +292,7 @@ namespace SRTPluginRE9::Hook
 			return oPresent(pSwapChain, SyncInterval, Flags);
 
 		// Bail if device is already in an error state
-		auto deviceStatus = g_dx12HookState.device->GetDeviceRemovedReason();
+		auto deviceStatus = hookState.device->GetDeviceRemovedReason();
 		if (deviceStatus != S_OK)
 		{
 			if (deviceStatus != lastDeviceStatus.exchange(deviceStatus))
@@ -368,21 +302,21 @@ namespace SRTPluginRE9::Hook
 
 		// Get the current frame context.
 		auto frameIndex = pSwapChain->GetCurrentBackBufferIndex();
-		auto &frameContext = g_dx12HookState.frameContexts[frameIndex];
+		auto &frameContext = hookState.frameContexts[frameIndex];
 
 		// Wait for this allocator to be free.
 		// This only blocks if the GPU hasn't finished the last time we used this allocator.
-		if (g_dx12HookState.fence->GetCompletedValue() < frameContext.fenceValue)
+		if (hookState.fence->GetCompletedValue() < frameContext.fenceValue)
 		{
-			g_dx12HookState.fence->SetEventOnCompletion(frameContext.fenceValue, g_dx12HookState.fenceEvent);
-			WaitForSingleObject(g_dx12HookState.fenceEvent, INFINITE);
+			hookState.fence->SetEventOnCompletion(frameContext.fenceValue, hookState.fenceEvent);
+			WaitForSingleObject(hookState.fenceEvent, INFINITE);
 		}
 
 		// Should be safe to reset this allocator now.
 		if (FAILED(frameContext.commandAllocator->Reset()))
 			return oPresent(pSwapChain, SyncInterval, Flags);
 
-		if (FAILED(g_dx12HookState.commandList->Reset(frameContext.commandAllocator.Get(), nullptr)))
+		if (FAILED(hookState.commandList->Reset(frameContext.commandAllocator.Get(), nullptr)))
 			return oPresent(pSwapChain, SyncInterval, Flags);
 
 		const auto firstRun = g_firstRunPresent.exchange(false);
@@ -403,14 +337,14 @@ namespace SRTPluginRE9::Hook
 			logger->LogMessage("hkPresent() - frameIndex={}, renderTarget={:p}, commandQueue={:p}\n",
 			                   frameIndex,
 			                   reinterpret_cast<void *>(frameContext.renderTarget.Get()),
-			                   reinterpret_cast<void *>(g_dx12HookState.commandQueue));
+			                   reinterpret_cast<void *>(hookState.commandQueue));
 
 			// Check if renderTarget is valid
 			if (!frameContext.renderTarget)
 				logger->LogMessage("hkPresent() - WARNING: renderTarget is null!\n");
 
 			// Log the device removed reason BEFORE we do anything
-			auto preStatus = g_dx12HookState.device->GetDeviceRemovedReason();
+			auto preStatus = hookState.device->GetDeviceRemovedReason();
 			logger->LogMessage("hkPresent() - Device status before render: {:#x}\n",
 			                   static_cast<uint32_t>(preStatus));
 		}
@@ -425,32 +359,32 @@ namespace SRTPluginRE9::Hook
 		        .StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET,
 		    },
 		};
-		g_dx12HookState.commandList->ResourceBarrier(1, &barrier);
-		g_dx12HookState.commandList->OMSetRenderTargets(1, &frameContext.rtvHandle, FALSE, nullptr);
+		hookState.commandList->ResourceBarrier(1, &barrier);
+		hookState.commandList->OMSetRenderTargets(1, &frameContext.rtvHandle, FALSE, nullptr);
 
-		ID3D12DescriptorHeap *heaps[] = {g_dx12HookState.heaps.srv.GetHeap()};
-		g_dx12HookState.commandList->SetDescriptorHeaps(1, heaps);
-		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), g_dx12HookState.commandList.Get());
+		ID3D12DescriptorHeap *heaps[] = {hookState.heaps.srv.GetHeap()};
+		hookState.commandList->SetDescriptorHeaps(1, heaps);
+		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), hookState.commandList.Get());
 
 		std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
-		g_dx12HookState.commandList->ResourceBarrier(1, &barrier);
+		hookState.commandList->ResourceBarrier(1, &barrier);
 
-		if (FAILED(g_dx12HookState.commandList->Close()))
+		if (FAILED(hookState.commandList->Close()))
 			return oPresent(pSwapChain, SyncInterval, Flags);
 
-		ID3D12CommandList *ppLists[] = {g_dx12HookState.commandList.Get()};
-		g_dx12HookState.commandQueue->ExecuteCommandLists(1, ppLists);
+		ID3D12CommandList *ppLists[] = {hookState.commandList.Get()};
+		hookState.commandQueue->ExecuteCommandLists(1, ppLists);
 
 		// Signal the fence for this frame context.
 		// Next time this buffer index comes around, we'll wait on this value.
-		g_dx12HookState.fenceValue++;
-		frameContext.fenceValue = g_dx12HookState.fenceValue;
-		g_dx12HookState.commandQueue->Signal(g_dx12HookState.fence.Get(), g_dx12HookState.fenceValue);
+		hookState.fenceValue++;
+		frameContext.fenceValue = hookState.fenceValue;
+		hookState.commandQueue->Signal(hookState.fence.Get(), hookState.fenceValue);
 
 		auto presentResult = oPresent(pSwapChain, SyncInterval, Flags);
 		if (firstRun)
 		{
-			auto postStatus = g_dx12HookState.device->GetDeviceRemovedReason();
+			auto postStatus = hookState.device->GetDeviceRemovedReason();
 			logger->LogMessage("hkPresent() - oPresent returned {:#x}, device status after: {:#x}\n",
 			                   static_cast<uint32_t>(presentResult),
 			                   static_cast<uint32_t>(postStatus));
@@ -461,15 +395,18 @@ namespace SRTPluginRE9::Hook
 	HRESULT STDMETHODCALLTYPE hkResizeBuffers(IDXGISwapChain *pSwapChain, UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT NewFormat, UINT Flags)
 	{
 		HRESULT hResult = S_OK;
+		auto &dx12 = DX12Hook::DX12Hook::GetInstance();
+		auto oResizeBuffers = dx12.GetOriginalResizeBuffers();
+		auto &hookState = dx12.GetHookStateMut();
 
-		if (!g_dx12HookState.initialized)
+		if (!hookState.initialized)
 			return oResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, Flags);
 
 		logger->LogMessage("hkResizeBuffers() - Started.\n");
 
 		logger->LogMessage("hkResizeBuffers() - Resetting our ID3D12Device before calling GetDevice on the new swapchain pointer...\n");
-		g_dx12HookState.device.Reset(); // Reset our previously created device before getting a new instance.
-		if (FAILED(pSwapChain->GetDevice(IID_PPV_ARGS(&g_dx12HookState.device))))
+		hookState.device = nullptr; // Reset our previously created device before getting a new instance.
+		if (FAILED(pSwapChain->GetDevice(__uuidof(ID3D12Device), reinterpret_cast<void **>(&hookState.device))))
 		{
 			logger->LogMessage("hkResizeBuffers() - GetDevice failed: {:#x}\n", static_cast<uint32_t>(hResult));
 			return hResult;
@@ -482,7 +419,7 @@ namespace SRTPluginRE9::Hook
 
 		// Release render targets before the resize
 		logger->LogMessage("hkResizeBuffers() - Resetting frame context render targets...\n");
-		for (auto &frameContext : g_dx12HookState.frameContexts)
+		for (auto &frameContext : hookState.frameContexts)
 			frameContext.renderTarget.Reset();
 
 		if (FAILED(hResult = oResizeBuffers(pSwapChain, BufferCount, Width, Height, NewFormat, Flags)))
@@ -511,13 +448,13 @@ namespace SRTPluginRE9::Hook
 		//
 		// It's really important to fully reset and reinitialize the RTV heap here,
 		// then allocate one RTV descriptor per back buffer as usual.
-		auto &rtv = g_dx12HookState.heaps.rtv;
-		g_dx12HookState.bufferCount = desc.BufferCount;
+		auto &rtv = hookState.heaps.rtv;
+		hookState.bufferCount = desc.BufferCount;
 		rtv.Reset();
 
-		UINT rtvCapacity = g_dx12HookState.bufferCount;
+		UINT rtvCapacity = hookState.bufferCount;
 		logger->LogMessage("hkResizeBuffers() - Reallocating RTV ({}) Heaps\n", rtvCapacity);
-		auto rtvResult = rtv.Init(g_dx12HookState.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, rtvCapacity, false);
+		auto rtvResult = rtv.Init(hookState.device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, rtvCapacity, false);
 		if (!rtvResult)
 		{
 			auto error = rtvResult.error();
@@ -527,11 +464,11 @@ namespace SRTPluginRE9::Hook
 		}
 
 		// Recreate render targets
-		for (UINT i = 0; i < g_dx12HookState.bufferCount; ++i)
+		for (UINT i = 0; i < hookState.bufferCount; ++i)
 		{
-			auto &frameContext = g_dx12HookState.frameContexts[i];
+			auto &frameContext = hookState.frameContexts[i];
 
-			auto rtvHandle = g_dx12HookState.heaps.rtv.Allocate();
+			auto rtvHandle = hookState.heaps.rtv.Allocate();
 			frameContext.rtvHandle = rtvHandle.cpu;
 
 			if (FAILED(hResult = pSwapChain->GetBuffer(i, IID_PPV_ARGS(&frameContext.renderTarget))))
@@ -542,7 +479,7 @@ namespace SRTPluginRE9::Hook
 			else
 				logger->LogMessage("hkResizeBuffers() - GetBuffer({}, ...) succeeded.\n", i);
 
-			g_dx12HookState.device->CreateRenderTargetView(frameContext.renderTarget.Get(), 0, rtvHandle.cpu);
+			hookState.device->CreateRenderTargetView(frameContext.renderTarget.Get(), 0, rtvHandle.cpu);
 		}
 
 		logger->LogMessage("hkResizeBuffers() - Creating ImGui device objects...\n");
@@ -560,7 +497,7 @@ namespace SRTPluginRE9::Hook
 	    ID3D12CommandList *const *ppCommandLists)
 	{
 		// Continuously track the most recent DIRECT queue until we lock one in.
-		if (!g_dx12HookState.commandQueue)
+		if (!DX12Hook::DX12Hook::GetInstance().GetHookState().commandQueue)
 		{
 			D3D12_COMMAND_QUEUE_DESC desc = pQueue->GetDesc();
 			if (desc.Type == D3D12_COMMAND_LIST_TYPE_DIRECT)
@@ -570,7 +507,7 @@ namespace SRTPluginRE9::Hook
 			}
 		}
 
-		oExecuteCommandLists(pQueue, NumCommandLists, ppCommandLists);
+		DX12Hook::DX12Hook::GetInstance().GetOriginalExecuteCommandLists()(pQueue, NumCommandLists, ppCommandLists);
 	}
 
 	bool Hook::Startup()
@@ -586,18 +523,8 @@ namespace SRTPluginRE9::Hook
 		}
 		logger->LogMessage("Hook::Startup() Base address: {}\n", g_BaseAddress.value());
 
-		const auto vtables = SetVTables();
-		if (!vtables)
-		{
-			logger->LogMessage("VTable recovery failed: {}\n", vtables.error());
-			return false;
-		}
-
-		if (!vtables->present || !vtables->resizeBuffers || !vtables->executeCommandLists || !vtables->getDeviceState || !vtables->getDeviceData)
-		{
-			logger->LogMessage("Hook::Startup() VTable pointer(s) are null!\n");
-			return false;
-		}
+		auto &dx12 = DX12Hook::DX12Hook::GetInstance();
+		auto &dinput8 = DInput8Hook::DInput8Hook::GetInstance();
 
 		// Give the driver a moment to fully clean up our
 		// dummy device/swapchain before we start hooking
@@ -606,16 +533,17 @@ namespace SRTPluginRE9::Hook
 
 		auto status = MH_Initialize();
 
-		MH_CreateHook(vtables->present, reinterpret_cast<void *>(&hkPresent),
-		              reinterpret_cast<void **>(&oPresent));
-		MH_CreateHook(vtables->resizeBuffers, reinterpret_cast<void *>(&hkResizeBuffers),
-		              reinterpret_cast<void **>(&oResizeBuffers));
-		MH_CreateHook(vtables->executeCommandLists, reinterpret_cast<void *>(&hkExecuteCommandLists),
-		              reinterpret_cast<void **>(&oExecuteCommandLists));
-		MH_CreateHook(vtables->getDeviceState, reinterpret_cast<void *>(&hkGetDeviceState),
-		              reinterpret_cast<void **>(&oGetDeviceState));
-		MH_CreateHook(vtables->getDeviceData, reinterpret_cast<void *>(&hkGetDeviceData),
-		              reinterpret_cast<void **>(&oGetDeviceData));
+		if (!dx12.AttachHooks(&hkPresent, &hkResizeBuffers, &hkExecuteCommandLists))
+		{
+			logger->LogMessage("Hook::Startup() DX12 hook attachment failed!\n");
+			return false;
+		}
+
+		if (!dinput8.AttachHooks(&hkGetDeviceState, &hkGetDeviceData))
+		{
+			logger->LogMessage("Hook::Startup() DInput8 hook attachment failed!\n");
+			return false;
+		}
 
 		MH_EnableHook(MH_ALL_HOOKS);
 		retVal = status == MH_OK;
@@ -629,27 +557,14 @@ namespace SRTPluginRE9::Hook
 	{
 		logger->LogMessage("Hook::Shutdown() called.\n");
 
-		MH_DisableHook(MH_ALL_HOOKS);
+		auto &dx12 = DX12Hook::DX12Hook::GetInstance();
+		auto &dinput8 = DInput8Hook::DInput8Hook::GetInstance();
+
+		dx12.DetachHooks();
+		dinput8.DetachHooks();
 		MH_Uninitialize();
 
 		Sleep(100);
-
-		if (g_dx12HookState.origWndProc)
-		{
-			SetWindowLongPtrW(g_dx12HookState.gameWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_dx12HookState.origWndProc));
-			g_dx12HookState.origWndProc = nullptr;
-		}
-
-		if (g_dx12HookState.fence && g_dx12HookState.commandQueue)
-		{
-			g_dx12HookState.fenceValue++;
-			g_dx12HookState.commandQueue->Signal(g_dx12HookState.fence.Get(), g_dx12HookState.fenceValue);
-			if (g_dx12HookState.fence->GetCompletedValue() < g_dx12HookState.fenceValue)
-			{
-				g_dx12HookState.fence->SetEventOnCompletion(g_dx12HookState.fenceValue, g_dx12HookState.fenceEvent);
-				WaitForSingleObject(g_dx12HookState.fenceEvent, 5000); // 5s timeout
-			}
-		}
 
 		ImGui_ImplDX12_Shutdown();
 		ImGui_ImplWin32_Shutdown();
@@ -658,23 +573,8 @@ namespace SRTPluginRE9::Hook
 		logger->SetUIPtr(nullptr);
 		srtUI.reset();
 
-		g_dx12HookState.commandList.Reset();
-		for (auto &frameContext : g_dx12HookState.frameContexts)
-		{
-			frameContext.commandAllocator.Reset();
-			frameContext.renderTarget.Reset();
-		}
-		g_dx12HookState.heaps.Reset();
-		g_dx12HookState.fence.Reset();
-		if (g_dx12HookState.fenceEvent)
-		{
-			CloseHandle(g_dx12HookState.fenceEvent);
-			g_dx12HookState.fenceEvent = nullptr;
-		}
-		g_dx12HookState.commandQueue = nullptr;
-		// Do NOT release g_dx12HookState.device - they belong to the game
+		dx12.Release();
 
-		g_dx12HookState.initialized = false;
 		logger->LogMessage("Hook::Shutdown() exiting...\n");
 	}
 
@@ -796,18 +696,4 @@ namespace SRTPluginRE9::Hook
 		FreeLibraryAndExitThread(g_dllModule, retVal);
 	}
 
-	[[nodiscard]] auto Hook::SetVTables() -> std::expected<VTableAddresses, std::string>
-	{
-		logger->LogMessage("Hook::SetVTables() called.\n");
-
-		auto result = VTableResolver::Resolve();
-		if (!result)
-		{
-			logger->LogMessage("Hook::SetVTables() failed: {}\n", result.error());
-
-			return std::unexpected(result.error());
-		}
-
-		return *result;
-	}
 }

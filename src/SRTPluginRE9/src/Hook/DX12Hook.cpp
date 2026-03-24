@@ -136,16 +136,65 @@ namespace SRTPluginRE9::DX12Hook
 		return instance;
 	}
 
-	const HookState &DX12Hook::GetHookState()
+	const HookState &DX12Hook::GetHookState() const
 	{
 		return hookState;
 	}
+
+	HookState &DX12Hook::GetHookStateMut()
+	{
+		return hookState;
+	}
+
+	bool DX12Hook::AttachHooks(PFN_Present hkPresent, PFN_ResizeBuffers hkResizeBuffers, PFN_ExecuteCommandLists hkExecuteCommandLists)
+	{
+		if (MH_CreateHook(vtableAddresses.present, reinterpret_cast<void *>(hkPresent), reinterpret_cast<void **>(&oPresent)) != MH_OK)
+		{
+			logger->LogMessage("DX12Hook::AttachHooks() - MH_CreateHook(Present) failed.\n");
+			return false;
+		}
+
+		if (MH_CreateHook(vtableAddresses.resizeBuffers, reinterpret_cast<void *>(hkResizeBuffers), reinterpret_cast<void **>(&oResizeBuffers)) != MH_OK)
+		{
+			logger->LogMessage("DX12Hook::AttachHooks() - MH_CreateHook(ResizeBuffers) failed.\n");
+			return false;
+		}
+
+		if (MH_CreateHook(vtableAddresses.executeCommandLists, reinterpret_cast<void *>(hkExecuteCommandLists), reinterpret_cast<void **>(&oExecuteCommandLists)) != MH_OK)
+		{
+			logger->LogMessage("DX12Hook::AttachHooks() - MH_CreateHook(ExecuteCommandLists) failed.\n");
+			return false;
+		}
+
+		logger->LogMessage("DX12Hook::AttachHooks() - All DX12 hooks attached.\n");
+		return true;
+	}
+
+	void DX12Hook::DetachHooks()
+	{
+		if (oPresent)
+			MH_DisableHook(vtableAddresses.present);
+		if (oResizeBuffers)
+			MH_DisableHook(vtableAddresses.resizeBuffers);
+		if (oExecuteCommandLists)
+			MH_DisableHook(vtableAddresses.executeCommandLists);
+
+		oPresent = nullptr;
+		oResizeBuffers = nullptr;
+		oExecuteCommandLists = nullptr;
+
+		logger->LogMessage("DX12Hook::DetachHooks() - All DX12 hooks detached.\n");
+	}
+
+	DX12Hook::PFN_Present DX12Hook::GetOriginalPresent() const { return oPresent; }
+	DX12Hook::PFN_ResizeBuffers DX12Hook::GetOriginalResizeBuffers() const { return oResizeBuffers; }
+	DX12Hook::PFN_ExecuteCommandLists DX12Hook::GetOriginalExecuteCommandLists() const { return oExecuteCommandLists; }
 
 	HRESULT STDMETHODCALLTYPE DX12Hook::Initialize(IDXGISwapChain3 *pSwapChain, LONG_PTR hkWndProc) // Attach hooks and create resources.
 	{
 		HRESULT hResult = S_OK;
 
-		if (FAILED(hResult = pSwapChain->GetDevice(IID_PPV_ARGS(&hookState.device))))
+		if (FAILED(hResult = pSwapChain->GetDevice(__uuidof(ID3D12Device), reinterpret_cast<void **>(&hookState.device))))
 		{
 			logger->LogMessage("DX12Hook::Initialize() - GetDevice failed: {:#x}\n", static_cast<uint32_t>(hResult));
 			return hResult;
