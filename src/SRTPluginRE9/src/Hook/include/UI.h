@@ -70,7 +70,7 @@ namespace SRTPluginRE9::Hook
 
 		const char *logoPositions[4]{"Upper Left", "Upper Right", "Lower Left", "Lower Right"};
 		const char *colorPresets[5]{"Blue", "Red", "Green", "White", "Gray"};
-		SRTPluginRE9::Hook::DescriptorHandle logoHandle;
+		SRTPluginRE9::DX12Hook::DX12DescriptorHandle logoHandle;
 		ID3D12Resource *logoTexture = nullptr;
 		int32_t logoWidth = 0;
 		int32_t logoHeight = 0;
