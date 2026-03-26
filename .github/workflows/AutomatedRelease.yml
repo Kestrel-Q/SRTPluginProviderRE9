@@ -43,6 +43,7 @@ jobs:
       verPreReleaseTag: ${{steps.version-parts.outputs.version_prereltag}}
       verBuild: ${{steps.build-number.outputs.current_build_number}}
       verSHAHash: ${{steps.short-sha-hash.outputs.short_sha_hash}}
+      verFullTag: ${{steps.semver-string.outputs.fulltag_string}}
       verSemVerString: ${{steps.semver-string.outputs.semver_string}}
 
     steps:
@@ -76,10 +77,14 @@ jobs:
         id: semver-string
         run: |
           [string]$semver_string = "${{steps.version-parts.outputs.version_major}}.${{steps.version-parts.outputs.version_minor}}.${{steps.version-parts.outputs.version_patch}}";
+
           if (![string]::IsNullOrWhitespace("${{steps.version-parts.outputs.version_prereltag}}")) {
             $semver_string += "-${{steps.version-parts.outputs.version_prereltag}}";
           }
+
           $semver_string += "+${{steps.build-number.outputs.current_build_number}}";
+          echo "fulltag_string=$semver_string" >> $env:GITHUB_OUTPUT;
+
           $semver_string += ".${{steps.short-sha-hash.outputs.short_sha_hash}}";
           echo "semver_string=$semver_string" >> $env:GITHUB_OUTPUT;
 
@@ -262,7 +267,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           name: "Automated Build - v${{needs.Setup.outputs.verSemVerString}} Release"
-          tag: v${{needs.Setup.outputs.verSemVerString}}
+          tag: v${{needs.Setup.outputs.verFullTag}}
           prerelease: ${{env.is-prerelease}}
           artifacts: ${{env.projectName}}_${{needs.Setup.outputs.verSemVerString}}.zip
           token: ${{ secrets.GITHUB_TOKEN }}
