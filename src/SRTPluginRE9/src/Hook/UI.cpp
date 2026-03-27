@@ -4,9 +4,7 @@
 #include "EnemyIds.h"
 #include "GameObjects.h"
 #include "Globals.h"
-#include "Logo.h"
 #include "Protected_Ptr.h"
-#include "Render.h"
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include <algorithm>
@@ -20,31 +18,7 @@ namespace SRTPluginRE9::Hook
 {
 	UI::UI()
 	{
-		logger->LogMessage("UI::ctor() - Allocating on SRV heap for logo.\n");
-		auto &hs = DX12Hook::DX12Hook::GetInstance().GetHookStateMut();
-		logoHandle = hs.heaps.srv.Allocate();
-		logoWidth = g_srtLogo_width;
-		logoHeight = g_srtLogo_height;
-		logger->LogMessage("UI::ctor() - Allocated handle {:p} on SRV heap.\n", reinterpret_cast<void *>(logoHandle.cpu.ptr));
-
-		auto ret = LoadTextureFromMemory(
-		    g_srtLogo.data(),
-		    logoWidth,
-		    logoHeight,
-		    hs.device,
-		    logoHandle.cpu,
-		    &logoTexture);
-		{
-			ret;
-			IM_ASSERT(ret);
-		}
-
 		GameWindowResized();
-	}
-
-	UI::~UI()
-	{
-		DestroyTexture(&logoTexture);
 	}
 
 	void STDMETHODCALLTYPE UI::RescaleDPI()
@@ -434,23 +408,16 @@ namespace SRTPluginRE9::Hook
 			for (const auto &enemyData : std::span(static_cast<EnemyData *>(localGameData.FilteredEnemies.Values), localGameData.FilteredEnemies.Size) | std::views::take(g_SRTSettings.EnemiesShownLimit))
 			{
 				if (enemyData.HP.CurrentHP >= 1'000'000 || (g_SRTSettings.EnemiesHideFullHP && enemyData.HP.CurrentHP == enemyData.HP.MaximumHP))
-				{
 					continue;
-				}
-				auto name_display = enemies.contains(enemyData.KindID) ? enemies.at(enemyData.KindID) : std::format("{}", enemyData.KindID);
+
+				auto enemyName = enemies.contains(enemyData.KindID) ? enemies.at(enemyData.KindID) : enemyData.KindID;
 				if (enemyData.HP.CurrentHP != enemyData.HP.MaximumHP)
-				{
-					ImGui::TextColored(ColorFromPreset(g_SRTSettings.EnemiesInjuredTextColorIndex), "%s %" PRIi32 " / %" PRIi32, name_display.c_str(), enemyData.HP.CurrentHP, enemyData.HP.MaximumHP);
-				}
+					ImGui::TextColored(ColorFromPreset(g_SRTSettings.EnemiesInjuredTextColorIndex), "%s %" PRIi32 " / %" PRIi32, enemyName.c_str(), enemyData.HP.CurrentHP, enemyData.HP.MaximumHP);
 				else
-				{
-					ImGui::TextColored(ColorFromPreset(g_SRTSettings.EnemiesFullHPTextColorIndex), "%s %" PRIi32 " / %" PRIi32, name_display.c_str(), enemyData.HP.CurrentHP, enemyData.HP.MaximumHP);
-				}
+					ImGui::TextColored(ColorFromPreset(g_SRTSettings.EnemiesFullHPTextColorIndex), "%s %" PRIi32 " / %" PRIi32, enemyName.c_str(), enemyData.HP.CurrentHP, enemyData.HP.MaximumHP);
 
 				if (g_SRTSettings.EnemyHPBarsVisible)
-				{
 					RenderHPBar(enemyData.HP.CurrentHP, enemyData.HP.MaximumHP);
-				}
 			}
 		}
 		ImGui::End();
@@ -458,6 +425,7 @@ namespace SRTPluginRE9::Hook
 
 	void STDMETHODCALLTYPE UI::DrawLogoOverlay()
 	{
+		const auto &hookState = DX12Hook::DX12Hook::GetInstance().GetHookState();
 		switch (static_cast<LogoPosition>(g_SRTSettings.LogoPosition))
 		{
 			case LogoPosition::UpperLeft:
@@ -465,13 +433,13 @@ namespace SRTPluginRE9::Hook
 				ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
 				break;
 			case LogoPosition::UpperRight:
-				ImGui::SetNextWindowPos(ImVec2(horizontal - 50.0f - static_cast<float>(logoWidth), 10.0f), ImGuiCond_Always);
+				ImGui::SetNextWindowPos(ImVec2(horizontal - 50.0f - static_cast<float>(hookState.logoWidth), 10.0f), ImGuiCond_Always);
 				break;
 			case LogoPosition::LowerLeft:
-				ImGui::SetNextWindowPos(ImVec2(10.0f, vertical - 50.0f - static_cast<float>(logoHeight)), ImGuiCond_Always);
+				ImGui::SetNextWindowPos(ImVec2(10.0f, vertical - 50.0f - static_cast<float>(hookState.logoHeight)), ImGuiCond_Always);
 				break;
 			case LogoPosition::LowerRight:
-				ImGui::SetNextWindowPos(ImVec2(horizontal - 50.0f - static_cast<float>(logoWidth), vertical - 50.0f - static_cast<float>(logoHeight)), ImGuiCond_Always);
+				ImGui::SetNextWindowPos(ImVec2(horizontal - 50.0f - static_cast<float>(hookState.logoWidth), vertical - 50.0f - static_cast<float>(hookState.logoHeight)), ImGuiCond_Always);
 				break;
 		}
 
@@ -479,8 +447,8 @@ namespace SRTPluginRE9::Hook
 		if (ImGui::Begin(logoWindowTitle.c_str(), nullptr, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove))
 		{
 			ImGui::Image(
-			    logoHandle.gpu.ptr,
-			    ImVec2(static_cast<float>(logoWidth) * logoScaleFactor, static_cast<float>(logoHeight) * logoScaleFactor),
+			    hookState.logoHandle.gpu.ptr,
+			    ImVec2(static_cast<float>(hookState.logoWidth) * logoScaleFactor, static_cast<float>(hookState.logoHeight) * logoScaleFactor),
 			    ImVec2(0, 0),
 			    ImVec2(1, 1),
 			    ImVec4(1.0f, 1.0f, 1.0f, g_SRTSettings.LogoOpacity),

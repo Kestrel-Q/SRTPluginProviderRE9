@@ -79,6 +79,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID)
 				g_LoggerUIData = new SRTPluginRE9::Logger::LoggerUIData();
 			}
 			logger = new SRTPluginRE9::Logger::Logger(g_logFile, g_LoggerUIData);
+
+			logger->LogMessage("{} {}: v{}\n", SRTPluginRE9::GameNameShort, SRTPluginRE9::ToolNameShort, SRTPluginRE9::Version::SemVer);
 			logger->LogMessage("DllMain() entered with reason: {:d}\n", ul_reason_for_call);
 
 			// Create thread to avoid blocking loader lock

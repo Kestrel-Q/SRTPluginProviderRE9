@@ -13,6 +13,7 @@ namespace SRTPluginRE9::Logger
 	{
 		ImGuiTextBuffer Buffer;
 		ImVector<int> LineOffsets;
+		LoggerUIData() { LineOffsets.push_back(0); }
 	};
 
 	class Logger

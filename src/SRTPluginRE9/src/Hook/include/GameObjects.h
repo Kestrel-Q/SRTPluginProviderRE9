@@ -1,7 +1,62 @@
 #ifndef SRTPLUGINRE9_GAMEOBJECTS_H
 #define SRTPLUGINRE9_GAMEOBJECTS_H
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#include <Windows.h>
 #include <cstdint>
+#include <string>
+
+#pragma warning(push)
+#pragma warning(disable : 4200) // nonstandard extension used: zero-sized array in struct/union
+struct viaString
+{
+	uint8_t _unknown1[0x10]; // 0x00 - 0x0F (16)
+	int32_t Length;          // 0x10 - 0x13 (4)
+	char16_t FirstChar;      // 0x14 - 0x.. (..)
+
+	const std::string GetString()
+	{
+		if (Length <= 0)
+			return "";
+
+		// Calculate required buffer size for the UTF-8 string
+		int utf8_len = WideCharToMultiByte(
+		    CP_UTF8,                               // CodePage
+		    0,                                     // dwFlags
+		    reinterpret_cast<LPCWSTR>(&FirstChar), // pWideCharStr (cast char16_t* to LPCWSTR)
+		    Length,                                // cchWideChar
+		    nullptr,                               // pMultiByteStr (nullptr to get size)
+		    0,                                     // cbMultiByte
+		    nullptr,                               // lpDefaultChar
+		    nullptr                                // lpUsedDefaultChar
+		);
+
+		if (utf8_len == 0)
+			return "";
+
+		// Allocate buffer and perform the conversion
+		std::string utf8_str(utf8_len, '\0');
+		WideCharToMultiByte(
+		    CP_UTF8,
+		    0,
+		    reinterpret_cast<LPCWSTR>(&FirstChar),
+		    Length,
+		    &utf8_str[0],
+		    utf8_len,
+		    nullptr,
+		    nullptr);
+
+		return utf8_str;
+	}
+};
+#pragma warning(pop)
 
 #pragma warning(push)
 #pragma warning(disable : 4200) // nonstandard extension used: zero-sized array in struct/union
@@ -136,6 +191,12 @@ struct RankManager // 0x38 (-)
 
 // *** Char Mgr
 
+struct CharacterKindID
+{
+	uint8_t _unknown1[0x10]; // 0x00 - 0x0F (16)
+	viaString *KindString;   // 0x10 - 0x17 (8)
+};
+
 struct CharacterHitPointData // 0x38 (56)
 {
 	uint8_t _unknown1[0x20];                  // 0x00 - 0x1F (32)
@@ -156,8 +217,8 @@ struct HitPoint // 0x80 (128)
 struct CharacterContext // 0xF8 (248)
 {
 	uint8_t _unknown1[0x40]; // 0x00 - 0x3F (64)
-	uint16_t KindID;         // 0x40 - 0x41 (2) (entries from app.CharacterKindID static fields?)
-	uint8_t _unknown2[0x2E]; // 0x42 - 0x6F (46)
+	CharacterKindID *KindID; // 0x40 - 0x47 (8) (entries from app.CharacterKindID static fields?)
+	uint8_t _unknown2[0x28]; // 0x48 - 0x6F (40)
 	HitPoint *HitPoint;      // 0x70 - 0x77 (8)
 	uint8_t _unknown3[0x80]; // 0x78 - 0xF7 (128)
 };

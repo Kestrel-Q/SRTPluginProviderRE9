@@ -4,4 +4,5 @@ public enum GameVersion : int
 {
     Unknown,
     WW_20260225_1,
+    WW_20260327_1,
 }

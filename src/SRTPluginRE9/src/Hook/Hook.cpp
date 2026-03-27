@@ -75,67 +75,71 @@ namespace SRTPluginRE9::Hook
 			}
 		}
 
-		const auto &imguiIO = ImGui::GetIO();
-
-		if (imguiIO.WantCaptureKeyboard)
+		// Protect against this section being called before ImGui context is setup.
+		if (ImGui::GetCurrentContext() != nullptr)
 		{
-			switch (msg)
-			{
-				case WM_KEYDOWN:
-				case WM_KEYUP:
-				case WM_SYSKEYDOWN:
-				case WM_SYSKEYUP:
-				case WM_CHAR:
-				case WM_SYSCHAR:
-					return true;
-				default:
-					break;
-			}
-		}
+			const auto &imguiIO = ImGui::GetIO();
 
-		if (imguiIO.WantCaptureMouse)
-		{
-			switch (msg)
+			if (imguiIO.WantCaptureKeyboard)
 			{
-				case WM_LBUTTONDOWN:
-				case WM_LBUTTONUP:
-				case WM_LBUTTONDBLCLK:
-				case WM_RBUTTONDOWN:
-				case WM_RBUTTONUP:
-				case WM_RBUTTONDBLCLK:
-				case WM_MBUTTONDOWN:
-				case WM_MBUTTONUP:
-				case WM_MBUTTONDBLCLK:
-				case WM_XBUTTONDOWN:
-				case WM_XBUTTONUP:
-				case WM_XBUTTONDBLCLK:
-				case WM_MOUSEMOVE:
-				case WM_MOUSEWHEEL:
-				case WM_MOUSEHWHEEL:
-					return true;
-				default:
-					break;
-			}
-		}
-
-		// Handle WM_INPUT separately — it carries both mouse and keyboard raw data
-		if (msg == WM_INPUT)
-		{
-			UINT size = 0;
-			GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, nullptr, &size, sizeof(RAWINPUTHEADER));
-
-			if (size > 0 && size <= 256)
-			{
-				alignas(RAWINPUT) BYTE buf[256];
-				if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, buf, &size, sizeof(RAWINPUTHEADER)) == size)
+				switch (msg)
 				{
-					auto *raw = reinterpret_cast<RAWINPUT *>(buf);
-
-					if (raw->header.dwType == RIM_TYPEKEYBOARD && imguiIO.WantCaptureKeyboard)
+					case WM_KEYDOWN:
+					case WM_KEYUP:
+					case WM_SYSKEYDOWN:
+					case WM_SYSKEYUP:
+					case WM_CHAR:
+					case WM_SYSCHAR:
 						return true;
+					default:
+						break;
+				}
+			}
 
-					if (raw->header.dwType == RIM_TYPEMOUSE && imguiIO.WantCaptureMouse)
+			if (imguiIO.WantCaptureMouse)
+			{
+				switch (msg)
+				{
+					case WM_LBUTTONDOWN:
+					case WM_LBUTTONUP:
+					case WM_LBUTTONDBLCLK:
+					case WM_RBUTTONDOWN:
+					case WM_RBUTTONUP:
+					case WM_RBUTTONDBLCLK:
+					case WM_MBUTTONDOWN:
+					case WM_MBUTTONUP:
+					case WM_MBUTTONDBLCLK:
+					case WM_XBUTTONDOWN:
+					case WM_XBUTTONUP:
+					case WM_XBUTTONDBLCLK:
+					case WM_MOUSEMOVE:
+					case WM_MOUSEWHEEL:
+					case WM_MOUSEHWHEEL:
 						return true;
+					default:
+						break;
+				}
+			}
+
+			// Handle WM_INPUT separately — it carries both mouse and keyboard raw data
+			if (msg == WM_INPUT)
+			{
+				UINT size = 0;
+				GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, nullptr, &size, sizeof(RAWINPUTHEADER));
+
+				if (size > 0 && size <= 256)
+				{
+					alignas(RAWINPUT) BYTE buf[256];
+					if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam), RID_INPUT, buf, &size, sizeof(RAWINPUTHEADER)) == size)
+					{
+						auto *raw = reinterpret_cast<RAWINPUT *>(buf);
+
+						if (raw->header.dwType == RIM_TYPEKEYBOARD && imguiIO.WantCaptureKeyboard)
+							return true;
+
+						if (raw->header.dwType == RIM_TYPEMOUSE && imguiIO.WantCaptureMouse)
+							return true;
+					}
 				}
 			}
 		}
@@ -611,11 +615,19 @@ namespace SRTPluginRE9::Hook
 			return retVal;
 		}
 
-		// Read until shutdown requested.
-		auto rankManager = protect(reinterpret_cast<RankManager **>(*g_BaseAddress + 0x0E815400ULL)).deref();
-		auto characterManager = protect(reinterpret_cast<CharacterManager **>(*g_BaseAddress + 0x0E843CF8ULL)).deref();
-		auto gameClock = protect(reinterpret_cast<GameClock **>(*g_BaseAddress + 0x0E834680ULL)).deref();
+		// 2026-03-13
+		// auto rankManager = protect(reinterpret_cast<RankManager **>(*g_BaseAddress + 0x0E815400ULL)).deref();
+		// auto characterManager = protect(reinterpret_cast<CharacterManager **>(*g_BaseAddress + 0x0E843CF8ULL)).deref();
+		// auto gameClock = protect(reinterpret_cast<GameClock **>(*g_BaseAddress + 0x0E834680ULL)).deref();
 		// auto cameraSystem = protect(reinterpret_cast<CameraSystem **>(*g_BaseAddress + 0x0E816138ULL)).deref();
+
+		// 2026-03-27
+		auto rankManager = protect(reinterpret_cast<RankManager **>(*g_BaseAddress + 0x0E8C7750ULL)).deref();
+		auto characterManager = protect(reinterpret_cast<CharacterManager **>(*g_BaseAddress + 0x0E90FE10ULL)).deref();
+		// auto gameClock = protect(reinterpret_cast<GameClock **>(*g_BaseAddress + 0x0ULL)).deref();
+		// auto cameraSystem = protect(reinterpret_cast<CameraSystem **>(*g_BaseAddress + 0x0ULL)).deref();
+
+		// Read until shutdown requested.
 		while (!g_shutdownRequested.load())
 		{
 			// Acquire an index to buffer data write into and get a reference to that data buffer.
@@ -629,9 +641,10 @@ namespace SRTPluginRE9::Hook
 
 			// Player HP
 			auto activePlayerContext = characterManager.follow(&CharacterManager::PlayerContextFast);
+			auto playerKindString = activePlayerContext.follow(&PlayerContext::KindID).follow(&CharacterKindID::KindString);
 			auto playerHitPoint = activePlayerContext.follow(&PlayerContext::HitPoint);
 			auto playerHitPointData = playerHitPoint.follow(&HitPoint::HitPointData);
-			localGameData.Data.Player.KindID = activePlayerContext.read(&PlayerContext::KindID),
+			localGameData.Data.Player.KindID = playerKindString->GetString();
 			localGameData.Data.Player.HP.CurrentHP = playerHitPointData.read(&CharacterHitPointData::_CurrentHP);
 			localGameData.Data.Player.HP.MaximumHP = playerHitPointData.read(&CharacterHitPointData::_CurrentMaxHP);
 			localGameData.Data.Player.HP.IsSetup = playerHitPointData.read(&CharacterHitPointData::_IsSetuped);
@@ -645,10 +658,11 @@ namespace SRTPluginRE9::Hook
 			                                  std::views::transform([](const EnemyContext *enemyContext)
 			                                                        {
 				                                              auto protectedEnemyContext = protect(enemyContext);
+															  auto kindString = protectedEnemyContext.follow(&EnemyContext::KindID).follow(&CharacterKindID::KindString);
 				                                              auto hitPointData = protectedEnemyContext.follow(&EnemyContext::HitPoint).follow(&HitPoint::HitPointData);
 				                                              return EnemyData
 				                                              {
-				                                              	.KindID = protectedEnemyContext.read(&EnemyContext::KindID),
+				                                              	.KindID = kindString->GetString(),
 				                                              	.HP = HPData
 				                                              	{
 				                                              		.CurrentHP = hitPointData.read(&CharacterHitPointData::_CurrentHP),

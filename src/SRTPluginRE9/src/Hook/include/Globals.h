@@ -105,7 +105,7 @@ extern "C"
 
 	struct EnemyData
 	{
-		uint16_t KindID;
+		std::string KindID;
 		HPData HP{};
 		PositionalData Position{};
 		float_t Distance;
@@ -113,7 +113,7 @@ extern "C"
 
 	struct PlayerData
 	{
-		uint16_t KindID;
+		std::string KindID;
 		HPData HP{};
 		PositionalData Position{};
 		float_t Distance;
